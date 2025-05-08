@@ -6,7 +6,7 @@ import io
 import csv
 import os
 
-# 1. Clé OpenAI
+# 1. Clé OpenAI depuis les secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # 2. Mémoire conversationnelle
@@ -22,7 +22,7 @@ df = None
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
         raw = uploaded_file.read()
-        # 3.1 Détection encodage
+        # 3.1 Détection d'encodage
         encoding_used = None
         for enc in ("utf-8", "ISO-8859-1"):
             try:
@@ -34,7 +34,7 @@ if uploaded_file:
         if encoding_used is None:
             st.error("❌ Impossible de détecter l'encodage du CSV.")
         else:
-            # 3.2 Détection délimiteur
+            # 3.2 Détection du délimiteur
             try:
                 sample = raw.decode(encoding_used)[:2048]
                 dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t"])
@@ -43,20 +43,24 @@ if uploaded_file:
                 delimiter = ","
             # 3.3 Lecture tolérante
             try:
-                df = pd.read_csv(io.BytesIO(raw),
-                                 sep=delimiter,
-                                 encoding=encoding_used,
-                                 engine="python")
+                df = pd.read_csv(
+                    io.BytesIO(raw),
+                    sep=delimiter,
+                    encoding=encoding_used,
+                    engine="python",
+                )
                 st.info(f"Fichier lu avec encodage `{encoding_used}` et délimiteur `{delimiter}`")
             except Exception:
                 # 3.4 Fallback quoting=None
                 try:
-                    df = pd.read_csv(io.BytesIO(raw),
-                                     sep=delimiter,
-                                     encoding=encoding_used,
-                                     engine="python",
-                                     quoting=csv.QUOTE_NONE,
-                                     on_bad_lines="warn")
+                    df = pd.read_csv(
+                        io.BytesIO(raw),
+                        sep=delimiter,
+                        encoding=encoding_used,
+                        engine="python",
+                        quoting=csv.QUOTE_NONE,
+                        on_bad_lines="warn",
+                    )
                     st.warning("⚠️ Lecture réussie en désactivant la gestion des guillemets.")
                 except Exception as e:
                     st.error(f"❌ Impossible de lire le CSV : {str(e)}")
@@ -70,7 +74,7 @@ if uploaded_file:
     else:
         st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
 
-# 4. Si on a bien un DataFrame, on passe à la suite
+# 4. Si DataFrame présent, suite
 if df is not None:
     st.success("✅ Données chargées")
     st.dataframe(df.head())
@@ -80,44 +84,40 @@ if df is not None:
         df["MONTANT"] = (
             df["MONTANT"]
             .astype(str)
-            .str.replace(r"[^\d,.-]", "", regex=True)  # on retire tout sauf chiffres, virgule, point et tiret
-            .str.replace(",", ".", regex=False)        # virgule → point
+            .str.replace(r"[^\d,.\-]", "", regex=True)
+            .str.replace(",", ".", regex=False)
         )
         df["MONTANT"] = pd.to_numeric(df["MONTANT"], errors="coerce")
     if "MONTANT_INITIAL" in df.columns:
         df["MONTANT_INITIAL"] = (
             df["MONTANT_INITIAL"]
             .astype(str)
-            .str.replace(r"[^\d,.-]", "", regex=True)
+            .str.replace(r"[^\d,.\-]", "", regex=True)
             .str.replace(",", ".", regex=False)
         )
         df["MONTANT_INITIAL"] = pd.to_numeric(df["MONTANT_INITIAL"], errors="coerce")
 
     # 5. Rapport BI détaillé
     if st.button("📄 Générer un rapport BI détaillé"):
-        with st.spinner("📊 Calcul et graphiques…"):
-            # 5.1 Datetime si existant
+        with st.spinner("📊 Calcul et génération des graphiques…"):
+            # 5.1 Construction du datetime
             if "DATE" in df.columns and "HEURE" in df.columns:
                 df["DATETIME"] = pd.to_datetime(
                     df["DATE"].astype(str) + " " + df["HEURE"].astype(str),
-                    dayfirst=True,
-                    errors="coerce",
+                    dayfirst=True, errors="coerce"
                 )
             else:
                 df["DATETIME"] = pd.NaT
 
-            # 5.2 Indicateurs
+            # 5.2 Indicateurs clé
             total_tx = len(df)
             total_amount = df["MONTANT"].sum() if "MONTANT" in df.columns else 0.0
             avg_amount = df["MONTANT"].mean() if "MONTANT" in df.columns else 0.0
 
             # 5.3 Série temporelle
             if df["DATETIME"].notna().any():
-                ts = (
-                    df.set_index("DATETIME")
-                    .resample("D")["MONTANT"]
-                    .agg(nb_tx="count", volume="sum")
-                )
+                ts = df.set_index("DATETIME").resample("D")["MONTANT"].agg(nb_tx="count", volume="sum")
+
                 fig1, ax1 = plt.subplots()
                 ts["nb_tx"].plot(ax=ax1)
                 ax1.set_title("Nombre de transactions par jour")
@@ -130,19 +130,17 @@ if df is not None:
                 ax2.set_ylabel("€")
                 st.pyplot(fig2)
 
-           # 5.4 Distribution des montants (version Matplotlib pure)
+            # 5.4 Distribution des montants
             if "MONTANT" in df.columns:
-                fig3, ax3 = plt.subplots()
-                # On prend bien une liste de floats
                 montants = df["MONTANT"].dropna().tolist()
-                ax3.hist(montants, bins=30) 
+                fig3, ax3 = plt.subplots()
+                ax3.hist(montants, bins=30)
                 ax3.set_title("Distribution des montants")
                 ax3.set_xlabel("Montant (€)")
                 ax3.set_ylabel("Fréquence")
                 st.pyplot(fig3)
 
-
-            # 5.5 Top 5 marchands
+            # 5.5 Top 5 des marchands
             if "MARCHAND" in df.columns:
                 top_merch = df["MARCHAND"].value_counts().head(5)
                 fig4, ax4 = plt.subplots()
@@ -151,19 +149,19 @@ if df is not None:
                 ax4.set_ylabel("Nombre de TX")
                 st.pyplot(fig4)
 
-            # 5.6 Prompt OpenAI pour le rapport narratif
+            # 5.6 Prompt OpenAI pour rapport narratif
             prompt = f"""
 Tu es un expert BI sur un système de paiement. Le dataset contient {total_tx} transactions,
 pour un montant total de {total_amount:.2f} € et un montant moyen de {avg_amount:.2f} €.
-Les principales colonnes sont : {', '.join(df.columns)}.
+Les colonnes principales : {', '.join(df.columns)}.
 
 Rédige un rapport structuré en français :
-1) Un résumé des tendances quotidiennes
+1) Résumé des tendances quotidiennes
 2) Points remarquables (pics, creux)
 3) Recommandations / insights
 Fais référence aux graphiques générés (transactions par jour, volumes, distribution, top marchands).
 """
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": "Tu es un analyste BI expert."},
@@ -172,11 +170,10 @@ Fais référence aux graphiques générés (transactions par jour, volumes, dist
             )
             rapport_bi = response.choices[0].message.content
 
-        # 6. Affichage
         st.markdown("### 📑 Rapport BI généré par l'IA")
         st.markdown(rapport_bi)
 
-    # 7. Interaction IA libre
+    # 6. Interaction libre avec mémoire
     st.subheader("💬 Pose une question à l'IA")
     user_input = st.text_area("Ex : Quelles ont été les tendances du weekend ?")
     if st.button("Analyser avec l'IA") and user_input:
@@ -185,12 +182,15 @@ Fais référence aux graphiques générés (transactions par jour, volumes, dist
         context += st.session_state.history[-5:]
         context.append({"role": "user", "content": f"Données (extrait) :\n{df.head(5).to_csv(index=False)}"})
         with st.spinner("🧠 L'IA analyse…"):
-            resp = openai.ChatCompletion.create(model="gpt-4", messages=context)
+            resp = openai.chat.completions.create(
+                model="gpt-4",
+                messages=context,
+            )
         reply = resp.choices[0].message.content
         st.session_state.history.append({"role": "assistant", "content": reply})
         st.markdown(reply)
 
-    # 8. Graphique personnalisé
+    # 7. Graphique personnalisé
     st.subheader("📈 Graphique personnalisé")
     col_x = st.selectbox("Axe X", df.columns)
     col_y = st.selectbox("Axe Y", df.columns)
@@ -198,6 +198,3 @@ Fais référence aux graphiques générés (transactions par jour, volumes, dist
         fig, ax = plt.subplots()
         df.plot(x=col_x, y=col_y, kind="bar", ax=ax)
         st.pyplot(fig)
-
-
-
