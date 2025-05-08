@@ -173,22 +173,45 @@ Fais référence aux graphiques générés (transactions par jour, volumes, dist
         st.markdown("### 📑 Rapport BI généré par l'IA")
         st.markdown(rapport_bi)
 
-    # 6. Interaction libre avec mémoire
-    st.subheader("💬 Pose une question à l'IA")
-    user_input = st.text_area("Ex : Quelles ont été les tendances du weekend ?")
-    if st.button("Analyser avec l'IA") and user_input:
-        st.session_state.history.append({"role": "user", "content": user_input})
-        context = [{"role": "system", "content": "Tu es un analyste de données professionnel."}]
-        context += st.session_state.history[-5:]
-        context.append({"role": "user", "content": f"Données (extrait) :\n{df.head(5).to_csv(index=False)}"})
-        with st.spinner("🧠 L'IA analyse…"):
-            resp = openai.chat.completions.create(
-                model="gpt-4",
-                messages=context,
-            )
-        reply = resp.choices[0].message.content
-        st.session_state.history.append({"role": "assistant", "content": reply})
-        st.markdown(reply)
+    # 6. Interaction libre avec reconnaissance des requêtes graphiques
+st.subheader("💬 Pose une question à l'IA")
+user_input = st.text_area("Ex : Quelles ont été les tendances du weekend ? Ou : Génère un graphique nombre moyen de TX par tranche horaire")
+
+if st.button("Analyser avec l'IA") and user_input:
+    query = user_input.lower()
+
+    # --- Cas spécial : requête de graphique horaire ---
+    if "graph" in query and "tranche horaire" in query:
+        # On extrait l'heure au format entier
+        if "HEURE" in df.columns:
+            df["HOUR"] = pd.to_datetime(df["HEURE"], errors="coerce").dt.hour
+            # Moyenne du nombre de TX par heure
+            hourly = df.groupby("HOUR").size() / df["DATETIME"].dt.normalize().nunique()
+            fig, ax = plt.subplots()
+            hourly.plot(kind="bar", ax=ax)
+            ax.set_title("Nombre moyen de transactions par tranche horaire")
+            ax.set_xlabel("Heure de la journée")
+            ax.set_ylabel("Moyenne de transactions")
+            st.pyplot(fig)
+        else:
+            st.error("❌ Impossible : ta table n’a pas de colonne `HEURE` correcte.")
+        # on sort de la logique pour ne pas appeler OpenAI
+        st.stop()
+
+    # --- Sinon : appel normal à OpenAI ---
+    st.session_state.history.append({"role": "user", "content": user_input})
+    context = [{"role": "system", "content": "Tu es un analyste de données professionnel."}]
+    context += st.session_state.history[-5:]
+    context.append({"role": "user", "content": f"Données (extrait) :\n{df.head(5).to_csv(index=False)}"})
+
+    with st.spinner("🧠 L'IA analyse…"):
+        resp = openai.chat.completions.create(
+            model="gpt-4",
+            messages=context,
+        )
+    reply = resp.choices[0].message.content
+    st.session_state.history.append({"role": "assistant", "content": reply})
+    st.markdown(reply)
 
     # 7. Graphique personnalisé
     st.subheader("📈 Graphique personnalisé")
