@@ -3,6 +3,8 @@ import pandas as pd
 import openai
 import matplotlib.pyplot as plt
 import os
+import io
+import csv
 
 # Clé OpenAI depuis les secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -19,39 +21,49 @@ uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["cs
 df = None  # Initialisation
 
 if uploaded_file:
-    try:
-        # Vérification du type de fichier
-        if uploaded_file.name.endswith(".csv"):
+    # Si c'est un CSV, on lit d'abord le binaire
+    if uploaded_file.name.endswith(".csv"):
+        raw = uploaded_file.read()
+        # 1) Détection d'encodage
+        for enc in ("utf-8", "ISO-8859-1"):
             try:
-                df = pd.read_csv(uploaded_file)
-                st.info("📄 Fichier lu avec séparateur `,` et encodage `utf-8`")
-            except pd.errors.ParserError:
-                try:
-                    df = pd.read_csv(uploaded_file, sep=";")
-                    st.info("📄 Fichier lu avec séparateur `;` et encodage `utf-8`")
-                except pd.errors.ParserError:
-                    try:
-                        df = pd.read_csv(uploaded_file, sep=";", encoding="ISO-8859-1")
-                        st.info("📄 Fichier lu avec séparateur `;` et encodage `ISO-8859-1`")
-                    except Exception as e:
-                        st.error(f"❌ Impossible de lire le fichier CSV : {str(e)}")
-                        df = None
-            except UnicodeDecodeError:
-                try:
-                    df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
-                    st.info("📄 Fichier lu avec séparateur `,` et encodage `ISO-8859-1`")
-                except Exception as e:
-                    st.error(f"❌ Erreur d'encodage (ISO-8859-1) : {str(e)}")
-                    df = None
-        elif uploaded_file.name.endswith(".xlsx"):
+                text = raw.decode(enc)
+                encoding_used = enc
+                break
+            except Exception:
+                encoding_used = None
+        if encoding_used is None:
+            st.error("❌ Impossible de détecter l'encodage du CSV.")
+        else:
+            # 2) Détection de délimiteur
+            try:
+                sample = text[:2048]
+                dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t"])
+                delimiter = dialect.delimiter
+            except Exception:
+                delimiter = ","
+            # 3) Lecture finale avec engine 'python' pour plus de tolérance
+            try:
+                df = pd.read_csv(
+                    io.BytesIO(raw),
+                    sep=delimiter,
+                    encoding=encoding_used,
+                    engine="python",
+                )
+                st.info(f"Fichier lu avec encodage `{encoding_used}` et délimiteur `{delimiter}`")
+            except Exception as e:
+                st.error(f"❌ Impossible de lire le CSV : {str(e)}")
+
+    # Si c'est un Excel
+    elif uploaded_file.name.endswith(".xlsx"):
+        try:
             df = pd.read_excel(uploaded_file)
             st.info("📄 Fichier Excel lu avec succès.")
-        else:
-            st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
-            df = None
-    except Exception as e:
-        st.error(f"❌ Erreur lors du traitement du fichier : {str(e)}")
-        df = None
+        except Exception as e:
+            st.error(f"❌ Erreur de lecture du fichier Excel : {str(e)}")
+
+    else:
+        st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
 
 if df is not None:
     st.success("✅ Données chargées")
@@ -82,14 +94,22 @@ Corrélations :
 
     if st.button("Analyser avec l'IA") and user_input:
         st.session_state.history.append({"role": "user", "content": user_input})
-        context = [{"role": "system", "content": "Tu es un analyste de données professionnel avec des compétences en data engineering, data scientist et data analytics."}]
+        context = [
+            {
+                "role": "system",
+                "content": "Tu es un analyste de données professionnel "
+                "avec des compétences en data engineering, data science et data analytics.",
+            }
+        ]
         context.extend(st.session_state.history[-5:])
-        context.append({"role": "user", "content": f"Données :\n{df.head(5).to_csv(index=False)}"})
+        context.append(
+            {"role": "user", "content": f"Données :\n{df.head(5).to_csv(index=False)}"}
+        )
 
         with st.spinner("🧠 L'IA analyse..."):
             response = openai.ChatCompletion.create(
                 model="gpt-4",
-                messages=context
+                messages=context,
             )
         reply = response.choices[0].message.content
         st.session_state.history.append({"role": "assistant", "content": reply})
@@ -104,3 +124,4 @@ Corrélations :
         fig, ax = plt.subplots()
         df.plot(x=col_x, y=col_y, kind="bar", ax=ax)
         st.pyplot(fig)
+
