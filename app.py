@@ -36,6 +36,14 @@ if uploaded_file:
                 except Exception as e:
                     st.error(f"❌ Erreur de lecture du CSV (séparateur) : {str(e)}")
                     df = None
+        elif uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
+        else:
+            st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
+            df = None
+    except Exception as e:
+        st.error(f"❌ Erreur lors du traitement du fichier : {str(e)}")
+        df = None
 
 if df is not None:
     st.success("✅ Données chargées")
