@@ -130,14 +130,17 @@ if df is not None:
                 ax2.set_ylabel("€")
                 st.pyplot(fig2)
 
-            # 5.4 Distribution des montants
+           # 5.4 Distribution des montants (version Matplotlib pure)
             if "MONTANT" in df.columns:
                 fig3, ax3 = plt.subplots()
-                df["MONTANT"].hist(bins=30, ax=ax3)
+                # On prend bien une liste de floats
+                montants = df["MONTANT"].dropna().tolist()
+                ax3.hist(montants, bins=30) 
                 ax3.set_title("Distribution des montants")
                 ax3.set_xlabel("Montant (€)")
                 ax3.set_ylabel("Fréquence")
                 st.pyplot(fig3)
+
 
             # 5.5 Top 5 marchands
             if "MARCHAND" in df.columns:
