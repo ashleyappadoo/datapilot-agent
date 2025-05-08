@@ -14,7 +14,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 if "history" not in st.session_state:
     st.session_state.history = []
 
-st.title("🧠 DataPilot – Agent IA d'analyse de données")
+st.title("Smile & Pay – Agent IA d'analyse de données")
 
 # Upload du fichier
 uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["csv", "xlsx"])
