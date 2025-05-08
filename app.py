@@ -21,28 +21,28 @@ uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["cs
 df = None  # Initialisation
 
 if uploaded_file:
-    # Si c'est un CSV, on lit d'abord le binaire
     if uploaded_file.name.endswith(".csv"):
         raw = uploaded_file.read()
         # 1) Détection d'encodage
+        encoding_used = None
         for enc in ("utf-8", "ISO-8859-1"):
             try:
-                text = raw.decode(enc)
+                _ = raw.decode(enc)
                 encoding_used = enc
                 break
             except Exception:
-                encoding_used = None
+                continue
         if encoding_used is None:
             st.error("❌ Impossible de détecter l'encodage du CSV.")
         else:
             # 2) Détection de délimiteur
             try:
-                sample = text[:2048]
+                sample = raw.decode(encoding_used)[:2048]
                 dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t"])
                 delimiter = dialect.delimiter
             except Exception:
                 delimiter = ","
-            # 3) Lecture finale avec engine 'python' pour plus de tolérance
+            # 3) Lecture initiale
             try:
                 df = pd.read_csv(
                     io.BytesIO(raw),
@@ -51,17 +51,28 @@ if uploaded_file:
                     engine="python",
                 )
                 st.info(f"Fichier lu avec encodage `{encoding_used}` et délimiteur `{delimiter}`")
-            except Exception as e:
-                st.error(f"❌ Impossible de lire le CSV : {str(e)}")
-
-    # Si c'est un Excel
+            except Exception:
+                # 4) Fallback quoting=None pour gérer les guillemets mal formés
+                try:
+                    df = pd.read_csv(
+                        io.BytesIO(raw),
+                        sep=delimiter,
+                        encoding=encoding_used,
+                        engine="python",
+                        quoting=csv.QUOTE_NONE,
+                        on_bad_lines="warn",
+                    )
+                    st.warning(
+                        "⚠️ Lecture réussie en désactivant la gestion des guillemets (quoting)."
+                    )
+                except Exception as e:
+                    st.error(f"❌ Impossible de lire le CSV : {str(e)}")
     elif uploaded_file.name.endswith(".xlsx"):
         try:
             df = pd.read_excel(uploaded_file)
             st.info("📄 Fichier Excel lu avec succès.")
         except Exception as e:
             st.error(f"❌ Erreur de lecture du fichier Excel : {str(e)}")
-
     else:
         st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
 
@@ -98,7 +109,7 @@ Corrélations :
             {
                 "role": "system",
                 "content": "Tu es un analyste de données professionnel "
-                "avec des compétences en data engineering, data science et data analytics.",
+                           "avec des compétences en data engineering, data science et data analytics.",
             }
         ]
         context.extend(st.session_state.history[-5:])
@@ -124,4 +135,5 @@ Corrélations :
         fig, ax = plt.subplots()
         df.plot(x=col_x, y=col_y, kind="bar", ax=ax)
         st.pyplot(fig)
+
 
