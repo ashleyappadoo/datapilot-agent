@@ -22,20 +22,20 @@ if uploaded_file:
     try:
         # Vérification du type de fichier
         if uploaded_file.name.endswith(".csv"):
-    try:
-        df = pd.read_csv(uploaded_file)
-    except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
-        except Exception as e:
-            st.error(f"❌ Erreur d'encodage : {str(e)}")
-            df = None
-    except pd.errors.ParserError:
-        try:
-            df = pd.read_csv(uploaded_file, sep=";", encoding="ISO-8859-1")
-        except Exception as e:
-            st.error(f"❌ Erreur de lecture du CSV (séparateur) : {str(e)}")
-            df = None
+            try:
+                df = pd.read_csv(uploaded_file)
+            except UnicodeDecodeError:
+                try:
+                    df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
+                except Exception as e:
+                    st.error(f"❌ Erreur d'encodage : {str(e)}")
+                    df = None
+            except pd.errors.ParserError:
+                try:
+                    df = pd.read_csv(uploaded_file, sep=";", encoding="ISO-8859-1")
+                except Exception as e:
+                    st.error(f"❌ Erreur de lecture du CSV (séparateur) : {str(e)}")
+                    df = None
 
 if df is not None:
     st.success("✅ Données chargées")
