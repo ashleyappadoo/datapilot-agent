@@ -23,36 +23,35 @@ if uploaded_file:
         # Vérification du type de fichier
         if uploaded_file.name.endswith(".csv"):
             try:
-                # Tentative avec encodage utf-8 et séparateur virgule
                 df = pd.read_csv(uploaded_file)
+                st.info("📄 Fichier lu avec séparateur `,` et encodage `utf-8`")
             except pd.errors.ParserError:
                 try:
-                    # Tentative avec séparateur point-virgule et encodage utf-8
                     df = pd.read_csv(uploaded_file, sep=";")
+                    st.info("📄 Fichier lu avec séparateur `;` et encodage `utf-8`")
                 except pd.errors.ParserError:
                     try:
-                        # Tentative avec séparateur point-virgule et encodage ISO
                         df = pd.read_csv(uploaded_file, sep=";", encoding="ISO-8859-1")
+                        st.info("📄 Fichier lu avec séparateur `;` et encodage `ISO-8859-1`")
                     except Exception as e:
                         st.error(f"❌ Impossible de lire le fichier CSV : {str(e)}")
                         df = None
             except UnicodeDecodeError:
                 try:
-                    # Tentative avec encodage ISO et séparateur virgule
                     df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
+                    st.info("📄 Fichier lu avec séparateur `,` et encodage `ISO-8859-1`")
                 except Exception as e:
                     st.error(f"❌ Erreur d'encodage (ISO-8859-1) : {str(e)}")
                     df = None
         elif uploaded_file.name.endswith(".xlsx"):
-            try:
-                df = pd.read_excel(uploaded_file)
-            except Exception as e:
-                st.error(f"❌ Erreur de lecture du fichier Excel : {str(e)}")
-                df = None
+            df = pd.read_excel(uploaded_file)
+            st.info("📄 Fichier Excel lu avec succès.")
         else:
             st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
             df = None
-
+    except Exception as e:
+        st.error(f"❌ Erreur lors du traitement du fichier : {str(e)}")
+        df = None
 
 if df is not None:
     st.success("✅ Données chargées")
