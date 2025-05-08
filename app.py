@@ -80,24 +80,91 @@ if df is not None:
     st.success("✅ Données chargées")
     st.dataframe(df.head())
 
-    # Rapport automatique
-    if st.button("📄 Générer un rapport automatique"):
-        rapport = f"""
-Lignes : {df.shape[0]}, Colonnes : {df.shape[1]}
+    # Rapport BI détaillé
+if st.button("📄 Générer un rapport BI détaillé"):
+    with st.spinner("📊 Calcul des indicateurs et génération des graphiques…"):
+        # 1. Préparation du datetime (si colonnes DATE et HEURE existantes)
+        if "DATE" in df.columns and "HEURE" in df.columns:
+            df["DATETIME"] = pd.to_datetime(df["DATE"].astype(str) + " " + df["HEURE"].astype(str),
+                                            dayfirst=True, errors="coerce")
+        else:
+            df["DATETIME"] = pd.NaT
 
-Types :
-{df.dtypes.to_string()}
+        # 2. Indicateurs clés
+        total_tx = len(df)
+        total_amount = df["MONTANT"].sum() if "MONTANT" in df.columns else None
+        avg_amount = df["MONTANT"].mean() if "MONTANT" in df.columns else None
 
-Valeurs manquantes :
-{df.isnull().sum()[df.isnull().sum() > 0].to_string() if df.isnull().sum().any() else "Aucune"}
+        # 3. Série temporelle journalière
+        if df["DATETIME"].notna().any():
+            ts = (df.set_index("DATETIME")
+                    .resample("D")["MONTANT"]
+                    .agg(["count","sum"])
+                    .rename(columns={"count":"nb_tx","sum":"volume"}))
+            fig1, ax1 = plt.subplots()
+            ts["nb_tx"].plot(ax=ax1)
+            ax1.set_title("Nombre de transactions par jour")
+            ax1.set_ylabel("Nombre de TX")
+            st.pyplot(fig1)
 
-Statistiques :
-{df.describe(include='all').transpose().to_string()}
+            fig2, ax2 = plt.subplots()
+            ts["volume"].plot(ax=ax2)
+            ax2.set_title("Volume des transactions (€) par jour")
+            ax2.set_ylabel("Montant total")
+            st.pyplot(fig2)
 
-Corrélations :
-{df.corr(numeric_only=True).to_string()}
+        # 4. Distribution des montants
+        if "MONTANT" in df.columns:
+            fig3, ax3 = plt.subplots()
+            df["MONTANT"].hist(bins=30, ax=ax3)
+            ax3.set_title("Distribution des montants de transaction")
+            ax3.set_xlabel("Montant (€)")
+            ax3.set_ylabel("Fréquence")
+            st.pyplot(fig3)
+
+        # 5. Top 5 marchands (si existants)
+        if "MARCHAND" in df.columns:
+            top_merch = df["MARCHAND"].value_counts().head(5)
+            fig4, ax4 = plt.subplots()
+            top_merch.plot(kind="bar", ax=ax4)
+            ax4.set_title("Top 5 des marchands par nombre de TX")
+            ax4.set_ylabel("Nombre de TX")
+            st.pyplot(fig4)
+
+        # 6. Préparation du prompt pour OpenAI
+        prompt = f"""
+Tu es un expert Business Intelligence pour un système de paiement.
+Le dataset contient {total_tx} transactions.
+Total du montant traité : {total_amount:.2f} €, montant moyen : {avg_amount:.2f} €.
+Colonnes principales : {', '.join(df.columns.tolist())}.
+
+Détaille pour moi :
+- Un résumé des tendances (volume / nombre) observées.
+- Les points remarquables (pics, creux).
+- Des recommandations ou insights sur la base de ces données.
+- Fais référence aux graphiques générés :
+  1) Nombre de transactions par jour
+  2) Volume des transactions par jour
+  3) Distribution des montants
+  4) Top 5 des marchands
+
+Répond en français, sous forme de rapport structuré (titres, paragraphes).
 """
-        st.text_area("📊 Rapport", rapport, height=300)
+
+        # 7. Appel à OpenAI
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Tu es un analyste BI expert."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        rapport_bi = response.choices[0].message.content
+
+    # 8. Affichage du rapport
+    st.markdown("### 📑 Rapport BI généré par l'IA")
+    st.markdown(rapport_bi)
+
 
     # Interaction IA
     st.subheader("💬 Pose une question à l'IA")
