@@ -2,15 +2,12 @@ import streamlit as st
 import pandas as pd
 import openai
 import matplotlib.pyplot as plt
-import io
-from dotenv import load_dotenv
 import os
 
-# Chargement de la clé API
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Clé OpenAI depuis les secrets
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# Mémoire du contexte utilisateur
+# Mémoire conversationnelle
 if "history" not in st.session_state:
     st.session_state.history = []
 
@@ -19,64 +16,67 @@ st.title("Smile & Pay – Agent IA d'analyse de données")
 # Upload du fichier
 uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["csv", "xlsx"])
 
-if uploaded_file:
-    # Lecture du fichier
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
+df = None  # Initialisation
 
-    st.success("✅ Données chargées avec succès !")
+if uploaded_file:
+    try:
+        # Vérification du type de fichier
+        if uploaded_file.name.endswith(".csv"):
+            try:
+                df = pd.read_csv(uploaded_file)
+            except UnicodeDecodeError:
+                df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
+        elif uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
+        else:
+            st.error("❌ Format non supporté. Merci de charger un fichier .csv ou .xlsx")
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la lecture du fichier : {str(e)}")
+
+if df is not None:
+    st.success("✅ Données chargées")
     st.dataframe(df.head())
 
-    # Génération automatique d'un rapport de base
+    # Rapport automatique
     if st.button("📄 Générer un rapport automatique"):
         rapport = f"""
-Le fichier contient {df.shape[0]} lignes et {df.shape[1]} colonnes.
+Lignes : {df.shape[0]}, Colonnes : {df.shape[1]}
 
-Types de données :
+Types :
 {df.dtypes.to_string()}
 
-Colonnes avec valeurs manquantes :
+Valeurs manquantes :
 {df.isnull().sum()[df.isnull().sum() > 0].to_string() if df.isnull().sum().any() else "Aucune"}
 
-Statistiques descriptives :
+Statistiques :
 {df.describe(include='all').transpose().to_string()}
 
 Corrélations :
 {df.corr(numeric_only=True).to_string()}
 """
-        st.text_area("📊 Rapport automatique", rapport, height=400)
+        st.text_area("📊 Rapport", rapport, height=300)
 
-    # Entrée utilisateur pour interaction
+    # Interaction IA
     st.subheader("💬 Pose une question à l'IA")
-    user_input = st.text_area("Exemple : Donne-moi une analyse des ventes par jour.")
+    user_input = st.text_area("Ex : Analyse les ventes par semaine")
 
     if st.button("Analyser avec l'IA") and user_input:
-        # Ajout au contexte
         st.session_state.history.append({"role": "user", "content": user_input})
+        context = [{"role": "system", "content": "Tu es un analyste de données professionnel avec des compétences en data engineering, data scientist et data analytics."}]
+        context.extend(st.session_state.history[-5:])
+        context.append({"role": "user", "content": f"Données :\n{df.head(5).to_csv(index=False)}"})
 
-        # Construction du contexte complet
-        context = [{"role": "system", "content": "Tu es un assistant expert en data analytics."}]
-        for message in st.session_state.history[-5:]:  # garder les 5 derniers messages
-            context.append(message)
-
-        # Ajout d'un aperçu des données
-        preview = df.head(10).to_csv(index=False)
-        context.append({"role": "user", "content": f"Voici un extrait du fichier pour t'aider :\n{preview}"})
-
-        # Appel à OpenAI
-        with st.spinner("🧠 L'IA réfléchit..."):
+        with st.spinner("🧠 L'IA analyse..."):
             response = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=context
             )
-        output = response.choices[0].message.content
-        st.session_state.history.append({"role": "assistant", "content": output})
-        st.markdown(output)
+        reply = response.choices[0].message.content
+        st.session_state.history.append({"role": "assistant", "content": reply})
+        st.markdown(reply)
 
-    # Graphiques simples
-    st.subheader("📈 Crée un graphique personnalisé")
+    # Graphiques
+    st.subheader("📈 Graphique personnalisé")
     col_x = st.selectbox("Axe X", df.columns)
     col_y = st.selectbox("Axe Y", df.columns)
 
