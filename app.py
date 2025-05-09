@@ -6,6 +6,53 @@ import io
 import csv
 import os
 
+def handle_hourly_plot_request(df, query):
+    """
+    Traite la requête de type 'tranche horaire'.
+    Retourne True si on a généré le graphique (et donc on arrête),
+    ou False pour passer à l'appel normal à l'IA.
+    """
+    # On détecte l’intention
+    if "graph" in query and "tranche horaire" in query:
+        needed = {"HEURE", "MONTANT"}
+        missing = needed - set(df.columns)
+
+        if missing:
+            # Colonnes manquantes : on propose de les créer
+            st.error(f"❌ Impossible de générer le graphique : colonnes manquantes : {', '.join(missing)}.")
+            if st.button(f"➕ Créer automatiquement la colonne {missing.pop()}"):
+                # Exemple : si manque HEURE, on propose comment la générer
+                if "HEURE" not in df.columns and "DATETIME" in df.columns:
+                    df["HEURE"] = df["DATETIME"].dt.hour
+                elif "HEURE" not in df.columns and "DATE" in df.columns and "HEURE_STR" in df.columns:
+                    # cas hypothétique
+                    df["HEURE"] = pd.to_datetime(df["HEURE_STR"]).dt.hour
+                st.experimental_rerun()
+            return True  # on stoppe ici (on veut attendre le rerun)
+        else:
+            # Toutes les colonnes sont là, on trace :
+            df["HOUR"] = pd.to_datetime(df["HEURE"], errors="coerce").dt.hour
+            # Calcul du nombre de jours
+            if "DATETIME" in df.columns:
+                days = df["DATETIME"].dt.date.nunique()
+            elif "DATE" in df.columns:
+                days = pd.to_datetime(df["DATE"], dayfirst=True, errors="coerce").dt.date.nunique()
+            else:
+                days = 1
+            counts = df.groupby("HOUR").size()
+            hourly = counts / days
+
+            fig, ax = plt.subplots()
+            hourly.plot(kind="bar", ax=ax)
+            ax.set_title("Nombre moyen de transactions par tranche horaire")
+            ax.set_xlabel("Heure de la journée")
+            ax.set_ylabel(f"Moyenne de TX sur {days} jour(s)")
+            st.pyplot(fig)
+            return True
+
+    return False
+
+
 # 1. Clé OpenAI depuis les secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
@@ -180,25 +227,12 @@ user_input = st.text_area("Ex : Quelles ont été les tendances du weekend ? Ou 
 if st.button("Analyser avec l'IA") and user_input:
     query = user_input.lower()
 
-    # --- Cas spécial : requête de graphique horaire ---
-    if "graph" in query and "tranche horaire" in query:
-        # On extrait l'heure au format entier
-        if "HEURE" in df.columns:
-            df["HOUR"] = pd.to_datetime(df["HEURE"], errors="coerce").dt.hour
-            # Moyenne du nombre de TX par heure
-            hourly = df.groupby("HOUR").size() / df["DATETIME"].dt.normalize().nunique()
-            fig, ax = plt.subplots()
-            hourly.plot(kind="bar", ax=ax)
-            ax.set_title("Nombre moyen de transactions par tranche horaire")
-            ax.set_xlabel("Heure de la journée")
-            ax.set_ylabel("Moyenne de transactions")
-            st.pyplot(fig)
-        else:
-            st.error("❌ Impossible : ta table n’a pas de colonne `HEURE` correcte.")
-        # on sort de la logique pour ne pas appeler OpenAI
-        st.stop()
+    # 2.1. Diagnostic pour graphique horaire
+    plotted = handle_hourly_plot_request(df, query)
+    if plotted:
+        st.stop()   # on arrête ici si on a géré la demande
 
-    # --- Sinon : appel normal à OpenAI ---
+    # 2.2. Sinon on laisse l'IA répondre
     st.session_state.history.append({"role": "user", "content": user_input})
     context = [{"role": "system", "content": "Tu es un analyste de données professionnel."}]
     context += st.session_state.history[-5:]
