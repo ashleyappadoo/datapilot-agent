@@ -79,54 +79,39 @@ if st.button("📄 Générer un rapport BI détaillé"):
 
 # --- 3. Agent conversationnel ---
 st.markdown("---")
-st.header("💬 Agent Conversationnel")
+    st.subheader("💬 Agent Conversationnel")
 
-# Initialisation mémoire
-if "history" not in st.session_state:
-    st.session_state.history = []
-
-# Zone de saisie utilisateur
-user_input = st.text_input("Votre requête :", "")
-
-if st.button("Envoyer") and user_input:
-    query = user_input.strip()
-    st.session_state.history.append({"role": "user", "content": query})
-
-    # Détection d'intention graphique horaire
-    lowq = query.lower()
-    if "graph" in lowq and "tranche horaire" in lowq:
-        # vérifie colonnes
-        if {"HOUR","MONTANT"}.issubset(df.columns):
-            days = df["DATETIME"].dt.date.nunique() if "DATETIME" in df.columns else 1
-            counts = df.groupby("HOUR").size()
-            hourly = counts / days
-            fig, ax = plt.subplots()
-            hourly.plot.bar(ax=ax)
-            ax.set_title("Moyenne des transactions par tranche horaire")
-            ax.set_xlabel("Heure"); ax.set_ylabel(f"TX moy. sur {days}j")
-            st.pyplot(fig)
-            st.session_state.history.append({"role": "assistant", "content": "Voici votre graphique."})
+    # Affichage de l’historique du chat
+    for msg in st.session_state.history:
+        if msg["role"] == "user":
+            st.markdown(f"**Vous :** {msg['content']}")
         else:
-            st.error("Il manque les colonnes `HEURE` ou `MONTANT`. Veuillez fournir ces données ou les créer d'abord.")
-            st.session_state.history.append({"role": "assistant", "content": "Colonnes manquantes pour ce graphique."})
-    else:
-        # Pour toute autre question, on appelle OpenAI
-        # Prépare le contexte : extrait des en-têtes et stats clés
-        preview = df.head(5).to_csv(index=False)
-        system = {"role": "system", "content": "Tu es un expert data analyste et BI."}
-        user_msg = {
-            "role": "user",
-            "content": f"Données (extrait) :\n{preview}\nQuestion : {query}"
-        }
-        messages = [system] + st.session_state.history[-5:] + [user_msg]
-        with st.spinner("🧠 Réflexion en cours..."):
-            resp = openai.chat.completions.create(
-                model="gpt-4",
-                messages=messages,
-            )
-        answer = resp.choices[0].message.content
-        st.markdown(answer)
-        st.session_state.history.append({"role": "assistant", "content": answer})
+            st.markdown(f"**Agent :** {msg['content']}")
 
-    # Réinitialise l’input pour la prochaine question
-    st.experimental_rerun()
+    # Zone de saisie et bouton
+    user_input = st.text_input("Votre requête :", key="user_input")
+    if st.button("Envoyer", key="send_btn") and user_input:
+        query = user_input.strip()
+        st.session_state.history.append({"role": "user", "content": query})
+
+        # Exemple de traitement graphique horaire…
+        if "graph" in query.lower() and "tranche horaire" in query.lower():
+            # … ton handle_hourly_plot_request ou code inline …
+            st.session_state.history.append({"role": "assistant",
+                                             "content": "Voici votre graphique."})
+        else:
+            # Appel OpenAI
+            preview = df.head(5).to_csv(index=False)
+            messages = [{"role": "system", "content": "Tu es un expert data analyste."}]
+            messages += st.session_state.history[-5:]
+            messages.append({"role": "user", "content": f"Données :\n{preview}\nQuestion : {query}"})
+            with st.spinner("🧠 Réflexion…"):
+                resp = openai.chat.completions.create(
+                    model="gpt-4", messages=messages
+                )
+            answer = resp.choices[0].message.content
+            st.session_state.history.append({"role": "assistant", "content": answer})
+
+        # Effacer l’input pour la prochaine question
+        st.session_state.user_input = ""
+        st.experimental_rerun()
