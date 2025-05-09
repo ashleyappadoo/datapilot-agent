@@ -1,190 +1,152 @@
 import streamlit as st
 import pandas as pd
-import openai
 import matplotlib.pyplot as plt
-import io
-import csv
+import io, csv
 
-# --- 1. Setup OpenAI ---
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+st.set_page_config(layout="wide")
+st.title("Smile & Pay – Rapport BI Transactions")
 
-# --- 2. Mémoire conversationnelle ---
-if "history" not in st.session_state:
-    st.session_state.history = []
+# 1. Upload
+uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["csv", "xlsx"])
+if not uploaded_file:
+    st.stop()
 
-st.title("Smile & Pay – Agent IA d'analyse de données")
+# 2. Lecture CSV/Excel
+if uploaded_file.name.endswith(".csv"):
+    raw = uploaded_file.read()
+    # sniff encoding & delimiter (utf-8/ISO & , ; \t)
+    for enc in ("utf-8","ISO-8859-1"):
+        try:
+            text = raw.decode(enc)
+            encoding = enc
+            break
+        except:
+            encoding = None
+    if encoding is None:
+        st.error("Impossible de détecter l'encodage CSV.")
+        st.stop()
+    try:
+        delim = csv.Sniffer().sniff(text[:2048], delimiters=[",",";","\t"]).delimiter
+    except:
+        delim = ","
+    df = pd.read_csv(io.BytesIO(raw), sep=delim, encoding=encoding, engine="python",
+                     quoting=csv.QUOTE_NONE, on_bad_lines="warn")
+else:
+    df = pd.read_excel(uploaded_file, engine="openpyxl")
 
-# --- 3. Fonction de diagnostic/plot horaire ---
-def handle_hourly_plot_request(df, query):
-    if "graph" in query and "tranche horaire" in query:
-        # Colonnes obligatoires
-        needed = {"HEURE", "MONTANT"}
-        missing = needed - set(df.columns)
+# 3. Nettoyage montant
+if "MONTANT" in df.columns:
+    df["MONTANT"] = (
+        df["MONTANT"].astype(str)
+        .str.replace(r"[^\d,.\-]", "", regex=True)
+        .str.replace(",", ".", regex=False)
+    ).pipe(pd.to_numeric, errors="coerce")
 
-        if missing:
-            st.error(f"❌ Colonnes manquantes pour ce graphique : {', '.join(missing)}.")
-            return True  # on arrête, sans appel IA
-        # toutes les colonnes sont présentes
-        df = df.copy()
-        df["HOUR"] = pd.to_datetime(df["HEURE"], errors="coerce").dt.hour
+# 4. Construction DATETIME & HOUR
+if {"DATE","HEURE"}.issubset(df.columns):
+    df["DATETIME"] = pd.to_datetime(
+        df["DATE"].astype(str)+" "+df["HEURE"].astype(str),
+        dayfirst=True, errors="coerce"
+    )
+    df["HOUR"] = df["DATETIME"].dt.hour
+else:
+    df["HOUR"] = pd.to_datetime(df["HEURE"], errors="coerce").dt.hour if "HEURE" in df.columns else pd.NA
+
+# 5. Génération du rapport
+if st.button("📄 Générer un rapport BI détaillé"):
+    st.markdown("## 🗂️ Aperçu du dataset")
+    st.write(f"- **Transactions :** {len(df):,}")
+    st.write(f"- **Colonnes :** {len(df.columns)} → {', '.join(df.columns)}")
+
+    # 5.1 Volume horaire
+    st.markdown("### 1. Volume horaire des transactions")
+    valid_h = df.dropna(subset=["HOUR"])
+    if not valid_h.empty:
         # nombre de jours uniques
         if "DATETIME" in df.columns:
             days = df["DATETIME"].dt.date.nunique()
         elif "DATE" in df.columns:
-            days = pd.to_datetime(df["DATE"], dayfirst=True, errors="coerce").dt.date.nunique()
+            days = pd.to_datetime(df["DATE"],dayfirst=True,errors="coerce").dt.date.nunique()
         else:
             days = 1
-        counts = df.groupby("HOUR").size()
-        hourly = counts / days
-
-        fig, ax = plt.subplots()
-        hourly.plot(kind="bar", ax=ax)
-        ax.set_title("Nombre moyen de transactions par tranche horaire")
-        ax.set_xlabel("Heure")
-        ax.set_ylabel(f"Moyenne sur {days} jour(s)")
+        hourly_counts = valid_h.groupby("HOUR").size()
+        hourly_avg = (hourly_counts / days).reindex(range(24), fill_value=0)
+        # résumé
+        peak_h = int(hourly_avg.idxmax()); peak_v = int(hourly_avg.max())
+        low_h  = int(hourly_avg.idxmin()); low_v  = int(hourly_avg.min())
+        st.write(f"- Moyenne de **{hourly_avg.mean():.2f}** TX/heure sur {days} jour(s)")
+        st.write(f"- **Pic** à {peak_h}h → {peak_v:.0f} TX ; **Creux** à {low_h}h → {low_v:.0f} TX")
+        # graphique
+        fig, ax = plt.subplots(figsize=(6,3))
+        hourly_avg.plot(kind="bar", ax=ax)
+        ax.set_xlabel("Heure"); ax.set_ylabel("TX/heure (moy.)")
         st.pyplot(fig)
-        return True
+    else:
+        st.write("Aucune donnée horaire disponible.")
 
-    return False
-
-# --- 4. Upload & lecture du fichier ---
-uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["csv", "xlsx"])
-df = None
-
-if uploaded_file:
-    if uploaded_file.name.endswith(".csv"):
-        raw = uploaded_file.read()
-        # Détection encodage
-        encoding_used = None
-        for enc in ("utf-8", "ISO-8859-1"):
-            try:
-                raw.decode(enc)
-                encoding_used = enc
-                break
-            except:
-                pass
-        if not encoding_used:
-            st.error("❌ Impossible de détecter l'encodage CSV.")
-        else:
-            # Détection délimiteur
-            try:
-                sample = raw.decode(encoding_used)[:2048]
-                dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t"])
-                delimiter = dialect.delimiter
-            except:
-                delimiter = ","
-            # Lecture tolérante
-            try:
-                df = pd.read_csv(io.BytesIO(raw), sep=delimiter, encoding=encoding_used, engine="python")
-                st.info(f"Lu avec encodage={encoding_used}, délimiteur='{delimiter}'")
-            except:
-                try:
-                    df = pd.read_csv(io.BytesIO(raw),
-                                     sep=delimiter,
-                                     encoding=encoding_used,
-                                     engine="python",
-                                     quoting=csv.QUOTE_NONE,
-                                     on_bad_lines="warn")
-                    st.warning("Lecture réussie en désactivant les guillemets.")
-                except Exception as e:
-                    st.error(f"❌ Impossible de lire le CSV : {e}")
-    else:  # Excel
-        try:
-            df = pd.read_excel(uploaded_file, engine="openpyxl")
-            st.info("Fichier Excel lu avec succès.")
-        except Exception as e:
-            st.error(f"❌ Erreur lecture Excel : {e}")
-
-# --- 5. Si lecture OK, on poursuit ---
-if df is not None:
-    st.success("✅ Données chargées")
-    st.dataframe(df.head())
-
-    # Nettoyage MONTANT
+    # 5.2 High-Value Transactions
+    st.markdown("### 2. High-Value Transactions (90ᵉ centile)")
     if "MONTANT" in df.columns:
-        df["MONTANT"] = (
-            df["MONTANT"]
-            .astype(str)
-            .str.replace(r"[^\d,.\-]", "", regex=True)
-            .str.replace(",", ".", regex=False)
-        )
-        df["MONTANT"] = pd.to_numeric(df["MONTANT"], errors="coerce")
+        p90 = df["MONTANT"].quantile(0.9)
+        hv = df[df["MONTANT"] >= p90]
+        st.write(f"- **90ᵉ centile** = {p90:.2f} € → {len(hv):,} TX")
+        if "TYPE_DE_CARTE" in hv.columns:
+            dist = hv["TYPE_DE_CARTE"].value_counts()
+            st.write(dist.to_frame("Count"))
+            fig, ax = plt.subplots(figsize=(4,3))
+            dist.plot(kind="bar", ax=ax)
+            ax.set_xlabel("Type de carte"); ax.set_ylabel("Nb TX")
+            st.pyplot(fig)
+    else:
+        st.write("Colonne `MONTANT` manquante.")
 
-    # Construction DATETIME
-    if "DATE" in df.columns and "HEURE" in df.columns:
-        df["DATETIME"] = pd.to_datetime(
-            df["DATE"].astype(str) + " " + df["HEURE"].astype(str),
-            dayfirst=True, errors="coerce"
-        )
+    # 5.3 Outliers par carte (IQR)
+    st.markdown("### 3. Transaction Outliers par type de carte")
+    if "MONTANT" in df.columns:
+        q1,q3 = df["MONTANT"].quantile([0.25,0.75])
+        iqr = q3-q1
+        low,high = q1-1.5*iqr, q3+1.5*iqr
+        out = df[(df["MONTANT"]<low)|(df["MONTANT"]>high)]
+        st.write(f"- **Outliers** détectés : {len(out):,} TX ({len(out)/len(df)*100:.2f} %)")
+        if "TYPE_DE_CARTE" in df.columns:
+            out_by = out["TYPE_DE_CARTE"].value_counts()
+            st.write(out_by.to_frame("Outliers"))
+    else:
+        st.write("Impossible sans `MONTANT`.")
 
-    # --- 5a. Rapport BI détaillé ---
-    if st.button("📄 Générer un rapport BI détaillé"):
-        with st.spinner("📊 Génération du rapport…"):
-            total_tx = len(df)
-            total_amount = df["MONTANT"].sum() if "MONTANT" in df.columns else 0.0
-            avg_amount = df["MONTANT"].mean() if "MONTANT" in df.columns else 0.0
+    # 5.4 Top 5 marchands
+    st.markdown("### 4. Top 5 Marchands par volume")
+    if "MARCHAND" in df.columns:
+        top5 = df["MARCHAND"].value_counts().head(5)
+        st.write(top5.to_frame("Nb TX"))
+        fig, ax = plt.subplots(figsize=(5,3))
+        top5.plot(kind="bar", ax=ax)
+        ax.set_xlabel("Marchand"); ax.set_ylabel("Nb TX")
+        st.pyplot(fig)
+    else:
+        st.write("Colonne `MARCHAND` manquante.")
 
-            # Série temporelle si possible
-            if "DATETIME" in df.columns and df["DATETIME"].notna().any():
-                ts = df.set_index("DATETIME").resample("D")["MONTANT"].agg(nb_tx="count", volume="sum")
-                fig1, ax1 = plt.subplots()
-                ts["nb_tx"].plot(ax=ax1); ax1.set_title("Tx par jour"); st.pyplot(fig1)
-                fig2, ax2 = plt.subplots()
-                ts["volume"].plot(ax=ax2); ax2.set_title("Volume (€) par jour"); st.pyplot(fig2)
+    # 5.5 Montants par mode de paiement
+    st.markdown("### 5. Montants par mode de paiement")
+    if {"MODE","MONTANT"}.issubset(df.columns):
+        stats = df.groupby("MODE")["MONTANT"].agg(["mean","std"]).round(2)
+        st.write(stats)
+        fig, ax = plt.subplots(figsize=(5,3))
+        stats["mean"].plot(kind="bar", yerr=stats["std"], ax=ax, capsize=4)
+        ax.set_xlabel("Mode"); ax.set_ylabel("Montant (€)")
+        st.pyplot(fig)
+    else:
+        st.write("Colonnes `MODE` ou `MONTANT` manquantes.")
 
-            # Distribution montants
-            if "MONTANT" in df.columns:
-                montants = df["MONTANT"].dropna().tolist()
-                fig3, ax3 = plt.subplots()
-                ax3.hist(montants, bins=30)
-                ax3.set_title("Distribution des montants"); st.pyplot(fig3)
-
-            # Top 5 marchands
-            if "MARCHAND" in df.columns:
-                top5 = df["MARCHAND"].value_counts().head(5)
-                fig4, ax4 = plt.subplots()
-                top5.plot(kind="bar", ax=ax4); ax4.set_title("Top 5 marchands"); st.pyplot(fig4)
-
-            # Prompt BI
-            prompt = f"""
-Dataset: {total_tx} transactions, total={total_amount:.2f} €, moyen={avg_amount:.2f} €.
-Colonnes: {', '.join(df.columns)}.
-1) Résumé tendances.
-2) Pics/creux.
-3) Insights.
-"""
-            resp = openai.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Tu es un expert BI."},
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            st.markdown("### 📑 Rapport BI généré par l'IA")
-            st.markdown(resp.choices[0].message.content)
-
-    # --- 5b. Interaction libre et graphiques spécifiques ---
-    st.subheader("💬 Pose une question ou demande un graphique")
-    user_input = st.text_area("Ex : Génère un graphique nombre moyen de TX par tranche horaire")
-
-    if st.button("Analyser"):
-        query = user_input.lower()
-
-        # 1) Cas graphique horaire
-        if handle_hourly_plot_request(df, query):
-            st.stop()
-
-        # 2) Sinon appel OpenAI
-        st.session_state.history.append({"role": "user", "content": user_input})
-        context = [{"role": "system", "content": "Tu es un data analyst pro."}]
-        context += st.session_state.history[-5:]
-        context.append({"role": "user", "content": f"Données (extrait):\n{df.head(5).to_csv(index=False)}"})
-
-        with st.spinner("🧠 L'IA réfléchit..."):
-            resp = openai.chat.completions.create(
-                model="gpt-4",
-                messages=context,
-            )
-        answer = resp.choices[0].message.content
-        st.session_state.history.append({"role": "assistant", "content": answer})
-        st.markdown(answer)
+    # 5.6 Volume par code postal
+    st.markdown("### 6. Volume par code postal")
+    if "CODE POSTAL" in df.columns:
+        grp = df["CODE POSTAL"].value_counts()
+        st.write(f"- **Codes postaux uniques** : {grp.size:,}")
+        st.write(f"- **Moyenne TX par code** : {grp.mean():.2f}")
+        fig, ax = plt.subplots(figsize=(6,3))
+        grp.head(20).plot(kind="bar", ax=ax)
+        ax.set_xlabel("Code postal"); ax.set_ylabel("Nb TX")
+        st.pyplot(fig)
+    else:
+        st.write("Colonne `CODE POSTAL` manquante.")
