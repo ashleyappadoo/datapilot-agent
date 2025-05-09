@@ -1,15 +1,13 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import io
-import csv
+import io, csv
 import openai
 
-# Page config
 st.set_page_config(layout="wide")
 st.title("Smile & Pay – Rapport BI & Agent Conversationnel")
 
-# 1. Upload et lecture du fichier
+# --- 1. Upload et lecture du fichier ---
 uploaded_file = st.file_uploader("📁 Charge un fichier CSV ou XLSX", type=["csv", "xlsx"])
 df = None
 
@@ -24,7 +22,7 @@ if uploaded_file:
                 encoding = enc
                 break
             except:
-                continue
+                pass
         if not encoding:
             st.error("❌ Impossible de détecter l'encodage CSV.")
         else:
@@ -59,7 +57,7 @@ if uploaded_file:
         except Exception as e:
             st.error(f"❌ Erreur lecture Excel : {e}")
 
-# 2. Nettoyage des colonnes
+# --- 2. Préparation des données ---
 if df is not None:
     st.success("✅ Données chargées")
     # Nettoyage MONTANT en float
@@ -81,7 +79,7 @@ if df is not None:
     elif "HEURE" in df.columns:
         df["HOUR"] = pd.to_datetime(df["HEURE"], errors="coerce").dt.hour
 
-    # 3. Génération du rapport BI détaillé
+    # --- 3. Génération du rapport BI détaillé ---
     if st.button("📄 Générer un rapport BI détaillé"):
         st.markdown("## 🗂️ Aperçu du dataset")
         st.write(f"- **Transactions :** {len(df):,}")
@@ -129,58 +127,60 @@ if df is not None:
         else:
             st.write("Colonne `MARCHAND` manquante.")
 
-    # 4. Agent conversationnel
+    # --- 4. Agent conversationnel ---
     st.markdown("---")
     st.header("💬 Agent Conversationnel")
 
-    # Initialisation mémoire de contexte
+    # Initialise l’historique
     if "history" not in st.session_state:
         st.session_state.history = []
 
-    # Affiche l'historique
+    # Affiche l’historique
     for msg in st.session_state.history:
         if msg["role"] == "user":
             st.markdown(f"**Vous :** {msg['content']}")
         else:
             st.markdown(f"**Agent :** {msg['content']}")
 
-    # Entrée utilisateur
-    user_input = st.text_input("Votre requête :", key="user_input")
-    send = st.button("Envoyer", key="send_btn")
+    # Utilise un formulaire pour le chat
+    with st.form("chat_form", clear_on_submit=True):
+        user_input = st.text_input("Votre requête :", "")
+        submitted = st.form_submit_button("Envoyer")
 
-    if send and user_input:
-        query = user_input.strip()
-        st.session_state.history.append({"role": "user", "content": query})
+        if submitted and user_input:
+            query = user_input.strip()
+            st.session_state.history.append({"role": "user", "content": query})
 
-        # Reconnaissance d'intention de graphique horaire
-        if "graph" in query.lower() and "tranche horaire" in query.lower():
-            if {"HOUR","MONTANT"}.issubset(df.columns):
-                days = df["DATETIME"].dt.date.nunique() if "DATETIME" in df.columns else 1
-                counts = df.groupby("HOUR").size()
-                hourly = (counts / days).reindex(range(24), fill_value=0)
-                fig, ax = plt.subplots()
-                hourly.plot.bar(ax=ax)
-                ax.set_title("Moyenne des transactions par tranche horaire")
-                ax.set_xlabel("Heure"); ax.set_ylabel(f"TX moy. sur {days}j")
-                st.pyplot(fig)
-                response = "Voici le graphique demandé."
+            # Intention : graphique horaire
+            if "graph" in query.lower() and "tranche horaire" in query.lower():
+                if {"HOUR","MONTANT"}.issubset(df.columns):
+                    days = df["DATETIME"].dt.date.nunique() if "DATETIME" in df.columns else 1
+                    counts = df.groupby("HOUR").size()
+                    hourly = (counts / days).reindex(range(24), fill_value=0)
+                    fig, ax = plt.subplots()
+                    hourly.plot.bar(ax=ax)
+                    ax.set_title("Moyenne des transactions par tranche horaire")
+                    ax.set_xlabel("Heure"); ax.set_ylabel(f"TX moy. sur {days}j")
+                    st.pyplot(fig)
+                    response = "Voici votre graphique."
+                else:
+                    response = "❌ Colonnes `HEURE` ou `MONTANT` manquantes. Veuillez fournir ces données."
+
             else:
-                response = "❌ Colonnes `HEURE` ou `MONTANT` manquantes. Veuillez fournir ces données."
-        else:
-            # Prépare le prompt pour OpenAI
-            preview = df.head(5).to_csv(index=False)
-            messages = [
-                {"role": "system", "content": "Tu es un expert data analyste et BI."}
-            ] + st.session_state.history[-5:] + [
-                {"role": "user", "content": f"Données (extrait) :\n{preview}\nQuestion : {query}"}
-            ]
-            with st.spinner("🧠 L'agent réfléchit..."):
-                resp = openai.chat.completions.create(
-                    model="gpt-4",
-                    messages=messages,
-                )
-            response = resp.choices[0].message.content
+                # Appel à OpenAI pour tout le reste
+                preview = df.head(5).to_csv(index=False)
+                messages = [{"role": "system", "content": "Tu es un expert data analyste et BI."}]
+                messages += st.session_state.history[-5:]
+                messages.append({"role": "user", "content": f"Données (extrait) :\n{preview}\nQuestion : {query}"})
 
-        # Affiche et mémorise la réponse
-        st.session_state.history.append({"role": "assistant", "content": response})
-        st.experimental_rerun()
+                with st.spinner("🧠 L'agent réfléchit..."):
+                    resp = openai.chat.completions.create(
+                        model="gpt-4",
+                        messages=messages,
+                    )
+                response = resp.choices[0].message.content
+
+            # Affiche et mémorise la réponse
+            st.session_state.history.append({"role": "assistant", "content": response})
+            # Après sortie du form, l'app va se recharger automatiquement
+
