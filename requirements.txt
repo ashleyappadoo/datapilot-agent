@@ -4,3 +4,4 @@ openai
 matplotlib
 python-dotenv
 openpyxl
+scikit-learn
