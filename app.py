@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pgeocode
 import pydeck as pdk
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
 
 st.set_page_config(layout="wide")
@@ -60,7 +60,6 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
                   .str.replace(r'\s+', ' ', regex=True)
                   .str.upper()
     )
-    # Renommage température si besoin
     if 'TEMPÉRATURE' in df_weather.columns:
         df_weather.rename(columns={'TEMPÉRATURE': 'TEMP'}, inplace=True)
     if 'CODE POSTAL' not in df_weather.columns and 'CODE_POSTAL' in df_weather.columns:
@@ -76,15 +75,14 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         .merge(df_weather[['CODE POSTAL', 'TEMP']], on='CODE POSTAL', how='left')
     )
 
-    # Géocodage des codes postaux FR
+    # Géocodage des codes postaux FR pour chaque code unique
     nomi = pgeocode.Nominatim('fr')
-    geo = nomi.query_postal_code(df['CODE POSTAL'].astype(str))
-    df_geo = geo[['postal_code', 'latitude', 'longitude']].rename(columns={'postal_code': 'CODE POSTAL'})
-    df = df.merge(df_geo, on='CODE POSTAL', how='left')
+    unique_cp = df[['CODE POSTAL']].drop_duplicates().astype(str)
+    geo = nomi.query_postal_code(unique_cp['CODE POSTAL'])
+    df_geo = geo[['postal_code', 'latitude', 'longitude']].rename(columns={'postal_code': 'CODE POSTAL'}).dropna()
 
     # --- 3. Rapport BI détaillé ---
     if st.button("📄 Générer rapport BI détaillé"):
-        # 1. Descriptifs
         st.header("1. Indicateurs descriptifs")
         total_tx = len(df)
         st.metric("Transactions totales", f"{total_tx:,}")
@@ -121,34 +119,54 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         ca_type['panier_moy'] = ca_type['sum']/ca_type['count']
         st.dataframe(ca_type.sort_values('count', ascending=False))
 
-        # Spatial descriptif + carte points
+        # Spatial descriptif avec agrégation par code postal
         st.header("Analyse spatiale par code postal")
-        by_cp = df.groupby('CODE POSTAL').agg(tx_count=('MONTANT','size'), ca=('MONTANT','sum'))
+        by_cp = df.groupby('CODE POSTAL').agg(
+            tx_count=('MONTANT','size'),
+            ca=('MONTANT','sum')
+        )
         by_cp['panier_moy'] = by_cp['ca']/by_cp['tx_count']
+        # Fusion avec géolocalisation
+        by_cp = by_cp.reset_index().merge(df_geo, on='CODE POSTAL', how='left').dropna(subset=['latitude','longitude'])
         st.dataframe(by_cp)
-        # Carte moy panier
-        st.subheader("Carte géographique : panier moyen")
-        st.pydeck_chart(pdk.Deck(
-            map_style='mapbox://styles/mapbox/light-v10',
-            initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
-            layers=[pdk.Layer(
-                'HeatmapLayer', data=df, get_position=['longitude','latitude'], get_weight='panier_moy', radiusPixels=50
-            )]
-        ))
-        # Carte CA
-        st.subheader("Carte géographique : montant des transactions")
-        st.pydeck_chart(pdk.Deck(
-            map_style='mapbox://styles/mapbox/light-v10',
-            initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
-            layers=[pdk.Layer(
-                'ScatterplotLayer', data=df, get_position=['longitude','latitude'], get_radius=10000,
-                get_fill_color=[200, 30, 0, 160], pickable=True
-            )]
-        ))
 
-        # 2. Diagnostics
+        # Carte géographique : panier moyen
+        st.subheader("Carte géographique : panier moyen par code postal")
+        deck1 = pdk.Deck(
+            map_style='mapbox://styles/mapbox/light-v10',
+            initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
+            layers=[
+                pdk.Layer(
+                    'HeatmapLayer',
+                    data=by_cp,
+                    get_position='[longitude, latitude]',
+                    get_weight='panier_moy',
+                    radiusPixels=50
+                )
+            ]
+        )
+        st.pydeck_chart(deck1)
+
+        # Carte géographique : montant total
+        st.subheader("Carte géographique : montant total par code postal")
+        deck2 = pdk.Deck(
+            map_style='mapbox://styles/mapbox/light-v10',
+            initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
+            layers=[
+                pdk.Layer(
+                    'ScatterplotLayer',
+                    data=by_cp,
+                    get_position='[longitude, latitude]',
+                    get_radius='ca / tx_count * 2000',
+                    get_fill_color='[200, 30, 0, 160]',
+                    pickable=True
+                )
+            ]
+        )
+        st.pydeck_chart(deck2)
+
+        # Diagnostics
         st.header("2. Indicateurs diagnostics")
-        # Corrélation et scatter
         st.subheader("Corrélation température vs montant")
         corr = df[['TEMP','MONTANT']].corr().loc['TEMP','MONTANT']
         st.write(f"Coefficient de corrélation (Pearson) : {corr:.2f}")
@@ -159,7 +177,6 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         ax.set_xlabel('Température (°C)'); ax.set_ylabel('Montant (€)')
         st.pyplot(fig)
 
-        # Panier moyen par classe de température
         st.subheader("Panier moyen par classes de température")
         bins = [-np.inf,5,15,np.inf]
         labels = ['<5°C','5-15°C','>15°C']
@@ -167,12 +184,10 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         tb = df.groupby('TEMP_BINS')['MONTANT'].mean()
         st.bar_chart(tb)
 
-        # Sensibilité du panier moyen par °C
         st.subheader("Sensibilité du panier moyen à 1°C")
         lr = LinearRegression().fit(df[['TEMP']], df['MONTANT'])
         st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
 
-        # Clustering
         st.header("3. Segmentation clients")
         feats = df[['MONTANT','HOUR','TEMP']].dropna()
         scaler = StandardScaler().fit(feats)
@@ -181,7 +196,6 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         df['cluster'] = kmeans.labels_
         st.subheader("Répartition des clusters (KMeans)")
         st.bar_chart(df['cluster'].value_counts().sort_index())
-        # Profils type
         prof = df.groupby('cluster').agg({
             'MONTANT':'mean', 'HOUR':'mean', 'TEMP':'mean', 'REF_MARCHAND':'count'
         }).rename(columns={'REF_MARCHAND':'nb_tx'})
@@ -190,4 +204,3 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.info("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
-
