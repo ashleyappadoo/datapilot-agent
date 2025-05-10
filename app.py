@@ -184,34 +184,34 @@ if mask.sum() > 1:
         st.write("⚠️ Impossible de calculer la droite de tendance (SVD non convergent).")
 else:
     st.write("⚠️ Pas assez de données pour tracer la droite de tendance.")
-        ax.plot(df['TEMP'], coef[0]*df['TEMP']+coef[1], color='red')
-        ax.set_xlabel('Température (°C)'); ax.set_ylabel('Montant (€)')
-        st.pyplot(fig)
+    ax.plot(df['TEMP'], coef[0]*df['TEMP']+coef[1], color='red')
+    ax.set_xlabel('Température (°C)'); ax.set_ylabel('Montant (€)')
+    st.pyplot(fig)
 
-        st.subheader("Panier moyen par classes de température")
-        bins = [-np.inf,5,15,np.inf]
-        labels = ['<5°C','5-15°C','>15°C']
-        df['TEMP_BINS'] = pd.cut(df['TEMP'], bins=bins, labels=labels)
-        tb = df.groupby('TEMP_BINS')['MONTANT'].mean()
-        st.bar_chart(tb)
+    st.subheader("Panier moyen par classes de température")
+    bins = [-np.inf,5,15,np.inf]
+    labels = ['<5°C','5-15°C','>15°C']
+    df['TEMP_BINS'] = pd.cut(df['TEMP'], bins=bins, labels=labels)
+    tb = df.groupby('TEMP_BINS')['MONTANT'].mean()
+    st.bar_chart(tb)
 
-        st.subheader("Sensibilité du panier moyen à 1°C")
-        lr = LinearRegression().fit(df[['TEMP']], df['MONTANT'])
-        st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
+    st.subheader("Sensibilité du panier moyen à 1°C")
+    lr = LinearRegression().fit(df[['TEMP']], df['MONTANT'])
+    st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
 
-        st.header("3. Segmentation clients")
-        feats = df[['MONTANT','HOUR','TEMP']].dropna()
-        scaler = StandardScaler().fit(feats)
-        X = scaler.transform(feats)
-        kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
-        df['cluster'] = kmeans.labels_
-        st.subheader("Répartition des clusters (KMeans)")
-        st.bar_chart(df['cluster'].value_counts().sort_index())
-        prof = df.groupby('cluster').agg({
-            'MONTANT':'mean', 'HOUR':'mean', 'TEMP':'mean', 'REF_MARCHAND':'count'
-        }).rename(columns={'REF_MARCHAND':'nb_tx'})
-        st.dataframe(prof)
+    st.header("3. Segmentation clients")
+    feats = df[['MONTANT','HOUR','TEMP']].dropna()
+    scaler = StandardScaler().fit(feats)
+    X = scaler.transform(feats)
+    kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
+    df['cluster'] = kmeans.labels_
+    st.subheader("Répartition des clusters (KMeans)")
+    st.bar_chart(df['cluster'].value_counts().sort_index())
+    prof = df.groupby('cluster').agg({
+    'MONTANT':'mean', 'HOUR':'mean', 'TEMP':'mean', 'REF_MARCHAND':'count'
+    }).rename(columns={'REF_MARCHAND':'nb_tx'})
+    st.dataframe(prof)
 
-        st.info("Sections prédictives à venir.")
+    st.info("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
