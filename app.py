@@ -50,7 +50,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     df = df_tx.merge(df_merch[['REF_MARCHAND', 'Organization_type']], on='REF_MARCHAND', how='left')
     df.rename(columns={'Organization_type': 'TYPE_COMMERCE'}, inplace=True)
     # Fusion Weather
-    df = df.merge(df_weather[['CODE POSTAL', 'TEMP']], on='CODE POSTAL', how='left')
+    df = df.merge(df_weather[['CODE POSTAL', 'Température']], on='CODE POSTAL', how='left')
 
     # --- 3. Rapport BI détaillé ---
     if st.button("📄 Générer rapport BI détaillé"):
