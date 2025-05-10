@@ -169,6 +169,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         ax.set_ylabel('Montant (€)')
         st.pyplot(fig)
 
+        # Panier par classes de température
         st.subheader("Panier moyen par classes de température")
         bins = [-np.inf,5,15,np.inf]
         labels = ['<5°C','5-15°C','>15°C']
@@ -176,8 +177,8 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         tb = df.groupby('TEMP_BINS')['MONTANT'].mean()
         st.bar_chart(tb)
 
+        # Sensibilité du panier/°C
         st.subheader("Sensibilité du panier moyen à 1°C")
-        # On filtre les données valides pour la régression
         mask2 = temps.notna() & montants.notna()
         if mask2.sum() > 1:
             lr = LinearRegression().fit(temps[mask2].values.reshape(-1,1), montants[mask2])
@@ -188,18 +189,14 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         # 3. Segmentation clients
         st.header("3. Segmentation clients")
         feats = df[['MONTANT','HOUR','TEMP']].dropna()
-        # Vérifier qu'il y a suffisamment d'observations
         if feats.shape[0] >= 3:
             try:
-                # Mise à l'échelle
                 scaler = StandardScaler().fit(feats)
                 X = scaler.transform(feats)
-                # KMeans
                 kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
                 df.loc[feats.index, 'cluster'] = kmeans.labels_
                 st.subheader("Répartition des clusters (KMeans)")
                 st.bar_chart(df['cluster'].value_counts().sort_index())
-                # Profils
                 prof = df.groupby('cluster').agg({
                     'MONTANT':'mean', 'HOUR':'mean', 'TEMP':'mean', 'REF_MARCHAND':'count'
                 }).rename(columns={'REF_MARCHAND':'nb_tx'})
@@ -209,6 +206,8 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         else:
             st.write("⚠️ Pas assez de transactions pour réaliser une segmentation (minimum 3).")
 
-        st.info("Sections prédictives à venir.")("Sections prédictives à venir.")
+        # Note informative
+        st.info("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
+
