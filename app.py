@@ -178,10 +178,15 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.bar_chart(tb)
 
         st.subheader("Sensibilité du panier moyen à 1°C")
-        lr = LinearRegression().fit(df[['TEMP']], df['MONTANT'])
-        st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
+# On filtre les données valides pour la régression
+mask2 = temps.notna() & montants.notna()
+if mask2.sum() > 1:
+    lr = LinearRegression().fit(temps[mask2].values.reshape(-1,1), montants[mask2])
+    st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
+else:
+    st.write("⚠️ Pas assez de données pour calculer la sensibilité panier/°C.")
 
-        # 3. Segmentation clients
+# 3. Segmentation clients
         st.header("3. Segmentation clients")
         feats = df[['MONTANT','HOUR','TEMP']].dropna()
         scaler = StandardScaler().fit(feats)
@@ -196,4 +201,5 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.info("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
+
 
