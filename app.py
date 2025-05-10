@@ -188,18 +188,27 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         # 3. Segmentation clients
         st.header("3. Segmentation clients")
         feats = df[['MONTANT','HOUR','TEMP']].dropna()
-        scaler = StandardScaler().fit(feats)
-        X = scaler.transform(feats)
-        kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
-        df['cluster'] = kmeans.labels_
-        st.subheader("Répartition des clusters (KMeans)")
-        st.bar_chart(df['cluster'].value_counts().sort_index())
-        prof = df.groupby('cluster').agg({'MONTANT':'mean','HOUR':'mean','TEMP':'mean','REF_MARCHAND':'count'}).rename(columns={'REF_MARCHAND':'nb_tx'})
-        st.dataframe(prof)
+        # Vérifier qu'il y a suffisamment d'observations
+        if feats.shape[0] >= 3:
+            try:
+                # Mise à l'échelle
+                scaler = StandardScaler().fit(feats)
+                X = scaler.transform(feats)
+                # KMeans
+                kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
+                df.loc[feats.index, 'cluster'] = kmeans.labels_
+                st.subheader("Répartition des clusters (KMeans)")
+                st.bar_chart(df['cluster'].value_counts().sort_index())
+                # Profils
+                prof = df.groupby('cluster').agg({
+                    'MONTANT':'mean', 'HOUR':'mean', 'TEMP':'mean', 'REF_MARCHAND':'count'
+                }).rename(columns={'REF_MARCHAND':'nb_tx'})
+                st.dataframe(prof)
+            except Exception as e:
+                st.write(f"⚠️ Erreur lors de la segmentation : {e}")
+        else:
+            st.write("⚠️ Pas assez de transactions pour réaliser une segmentation (minimum 3).")
 
-        st.info("Sections prédictives à venir.")
+        st.info("Sections prédictives à venir.")("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
-
-
-
