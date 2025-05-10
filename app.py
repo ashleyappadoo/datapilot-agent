@@ -75,7 +75,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         .merge(df_weather[['CODE POSTAL', 'TEMP']], on='CODE POSTAL', how='left')
     )
 
-    # Géocodage des codes postaux FR pour chaque code unique
+    # Géocodage des codes postaux FR
     nomi = pgeocode.Nominatim('fr')
     unique_cp = df[['CODE POSTAL']].drop_duplicates().astype(str)
     geo = nomi.query_postal_code(unique_cp['CODE POSTAL'])
@@ -83,6 +83,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
     # --- 3. Rapport BI détaillé ---
     if st.button("📄 Générer rapport BI détaillé"):
+        # 1. Descriptifs
         st.header("1. Indicateurs descriptifs")
         total_tx = len(df)
         st.metric("Transactions totales", f"{total_tx:,}")
@@ -111,107 +112,88 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.subheader("Distribution des montants")
         desc = df['MONTANT'].describe(percentiles=[0.1,0.25,0.5,0.75,0.9])
         st.table(desc[['10%','25%','50%','75%','90%','mean']]
-                  .rename({'10%':'P10','25%':'P25','50%':'Médiane','75%':'P75','90%':'P90','mean':'Moyenne'}))
+                  .rename({'10%':'P10','25%':'P25','50%':'Médiane',
+                           '75%':'P75','90%':'P90','mean':'Moyenne'}))
 
+        # Répartition par type
         st.header("Répartition par type de commerce")
         st.bar_chart(df['TYPE_COMMERCE'].value_counts())
         ca_type = df.groupby('TYPE_COMMERCE')['MONTANT'].agg(['sum','count'])
         ca_type['panier_moy'] = ca_type['sum']/ca_type['count']
         st.dataframe(ca_type.sort_values('count', ascending=False))
 
-        # Spatial descriptif avec agrégation par code postal
+        # Spatial descriptif
         st.header("Analyse spatiale par code postal")
-        by_cp = df.groupby('CODE POSTAL').agg(
-            tx_count=('MONTANT','size'),
-            ca=('MONTANT','sum')
-        )
+        by_cp = df.groupby('CODE POSTAL').agg(tx_count=('MONTANT','size'), ca=('MONTANT','sum'))
         by_cp['panier_moy'] = by_cp['ca']/by_cp['tx_count']
-        # Fusion avec géolocalisation
         by_cp = by_cp.reset_index().merge(df_geo, on='CODE POSTAL', how='left').dropna(subset=['latitude','longitude'])
         st.dataframe(by_cp)
 
-        # Carte géographique : panier moyen
+        # Carte géo panier moyen
         st.subheader("Carte géographique : panier moyen par code postal")
         deck1 = pdk.Deck(
             map_style='mapbox://styles/mapbox/light-v10',
             initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
-            layers=[
-                pdk.Layer(
-                    'HeatmapLayer',
-                    data=by_cp,
-                    get_position='[longitude, latitude]',
-                    get_weight='panier_moy',
-                    radiusPixels=50
-                )
-            ]
+            layers=[pdk.Layer('HeatmapLayer', data=by_cp, get_position='[longitude, latitude]', get_weight='panier_moy', radiusPixels=50)]
         )
         st.pydeck_chart(deck1)
 
-        # Carte géographique : montant total
+        # Carte géo montant total
         st.subheader("Carte géographique : montant total par code postal")
         deck2 = pdk.Deck(
             map_style='mapbox://styles/mapbox/light-v10',
             initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
-            layers=[
-                pdk.Layer(
-                    'ScatterplotLayer',
-                    data=by_cp,
-                    get_position='[longitude, latitude]',
-                    get_radius='ca / tx_count * 2000',
-                    get_fill_color='[200, 30, 0, 160]',
-                    pickable=True
-                )
-            ]
+            layers=[pdk.Layer('ScatterplotLayer', data=by_cp, get_position='[longitude, latitude]', get_radius='ca/tx_count*2000', get_fill_color='[200,30,0,160]', pickable=True)]
         )
         st.pydeck_chart(deck2)
 
-        # Diagnostics
+        # 2. Diagnostics
         st.header("2. Indicateurs diagnostics")
         st.subheader("Corrélation température vs montant")
         corr = df[['TEMP','MONTANT']].corr().loc['TEMP','MONTANT']
         st.write(f"Coefficient de corrélation (Pearson) : {corr:.2f}")
         fig, ax = plt.subplots()
         ax.scatter(df['TEMP'], df['MONTANT'], alpha=0.3)
-        # Calcul de la droite de tendance en gérant les erreurs
-temps = df['TEMP']
-montants = df['MONTANT']
-mask = temps.notna() & montants.notna()
-if mask.sum() > 1:
-    try:
-        coef = np.polyfit(temps[mask], montants[mask], 1)
-        ax.plot(temps[mask], coef[0]*temps[mask] + coef[1], color='red')
-    except np.linalg.LinAlgError:
-        st.write("⚠️ Impossible de calculer la droite de tendance (SVD non convergent).")
-else:
-    st.write("⚠️ Pas assez de données pour tracer la droite de tendance.")
-    ax.plot(df['TEMP'], coef[0]*df['TEMP']+coef[1], color='red')
-    ax.set_xlabel('Température (°C)'); ax.set_ylabel('Montant (€)')
-    st.pyplot(fig)
+        # Calcul de la droite de tendance
+        temps = df['TEMP']
+        montants = df['MONTANT']
+        mask = temps.notna() & montants.notna()
+        if mask.sum() > 1:
+            try:
+                coef = np.polyfit(temps[mask], montants[mask], 1)
+                ax.plot(temps[mask], coef[0]*temps[mask] + coef[1], color='red')
+            except np.linalg.LinAlgError:
+                st.write("⚠️ Impossible de calculer la droite de tendance (SVD non convergent).")
+        else:
+            st.write("⚠️ Pas assez de données pour tracer la droite de tendance.")
+        ax.set_xlabel('Température (°C)')
+        ax.set_ylabel('Montant (€)')
+        st.pyplot(fig)
 
-    st.subheader("Panier moyen par classes de température")
-    bins = [-np.inf,5,15,np.inf]
-    labels = ['<5°C','5-15°C','>15°C']
-    df['TEMP_BINS'] = pd.cut(df['TEMP'], bins=bins, labels=labels)
-    tb = df.groupby('TEMP_BINS')['MONTANT'].mean()
-    st.bar_chart(tb)
+        st.subheader("Panier moyen par classes de température")
+        bins = [-np.inf,5,15,np.inf]
+        labels = ['<5°C','5-15°C','>15°C']
+        df['TEMP_BINS'] = pd.cut(df['TEMP'], bins=bins, labels=labels)
+        tb = df.groupby('TEMP_BINS')['MONTANT'].mean()
+        st.bar_chart(tb)
 
-    st.subheader("Sensibilité du panier moyen à 1°C")
-    lr = LinearRegression().fit(df[['TEMP']], df['MONTANT'])
-    st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
+        st.subheader("Sensibilité du panier moyen à 1°C")
+        lr = LinearRegression().fit(df[['TEMP']], df['MONTANT'])
+        st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
 
-    st.header("3. Segmentation clients")
-    feats = df[['MONTANT','HOUR','TEMP']].dropna()
-    scaler = StandardScaler().fit(feats)
-    X = scaler.transform(feats)
-    kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
-    df['cluster'] = kmeans.labels_
-    st.subheader("Répartition des clusters (KMeans)")
-    st.bar_chart(df['cluster'].value_counts().sort_index())
-    prof = df.groupby('cluster').agg({
-    'MONTANT':'mean', 'HOUR':'mean', 'TEMP':'mean', 'REF_MARCHAND':'count'
-    }).rename(columns={'REF_MARCHAND':'nb_tx'})
-    st.dataframe(prof)
+        # 3. Segmentation clients
+        st.header("3. Segmentation clients")
+        feats = df[['MONTANT','HOUR','TEMP']].dropna()
+        scaler = StandardScaler().fit(feats)
+        X = scaler.transform(feats)
+        kmeans = KMeans(n_clusters=3, random_state=42).fit(X)
+        df['cluster'] = kmeans.labels_
+        st.subheader("Répartition des clusters (KMeans)")
+        st.bar_chart(df['cluster'].value_counts().sort_index())
+        prof = df.groupby('cluster').agg({'MONTANT':'mean','HOUR':'mean','TEMP':'mean','REF_MARCHAND':'count'}).rename(columns={'REF_MARCHAND':'nb_tx'})
+        st.dataframe(prof)
 
-    st.info("Sections prédictives à venir.")
+        st.info("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
+
