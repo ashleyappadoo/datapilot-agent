@@ -172,7 +172,18 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.write(f"Coefficient de corrélation (Pearson) : {corr:.2f}")
         fig, ax = plt.subplots()
         ax.scatter(df['TEMP'], df['MONTANT'], alpha=0.3)
-        coef = np.polyfit(df['TEMP'], df['MONTANT'], 1)
+        # Calcul de la droite de tendance en gérant les erreurs
+temps = df['TEMP']
+montants = df['MONTANT']
+mask = temps.notna() & montants.notna()
+if mask.sum() > 1:
+    try:
+        coef = np.polyfit(temps[mask], montants[mask], 1)
+        ax.plot(temps[mask], coef[0]*temps[mask] + coef[1], color='red')
+    except np.linalg.LinAlgError:
+        st.write("⚠️ Impossible de calculer la droite de tendance (SVD non convergent).")
+else:
+    st.write("⚠️ Pas assez de données pour tracer la droite de tendance.")
         ax.plot(df['TEMP'], coef[0]*df['TEMP']+coef[1], color='red')
         ax.set_xlabel('Température (°C)'); ax.set_ylabel('Montant (€)')
         st.pyplot(fig)
