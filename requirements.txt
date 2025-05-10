@@ -5,3 +5,4 @@ matplotlib
 python-dotenv
 openpyxl
 scikit-learn
+pgeocode
