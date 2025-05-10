@@ -112,8 +112,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.subheader("Distribution des montants")
         desc = df['MONTANT'].describe(percentiles=[0.1,0.25,0.5,0.75,0.9])
         st.table(desc[['10%','25%','50%','75%','90%','mean']]
-                  .rename({'10%':'P10','25%':'P25','50%':'Médiane',
-                           '75%':'P75','90%':'P90','mean':'Moyenne'}))
+                  .rename({'10%':'P10','25%':'P25','50%':'Médiane','75%':'P75','90%':'P90','mean':'Moyenne'}))
 
         # Répartition par type
         st.header("Répartition par type de commerce")
@@ -178,15 +177,15 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.bar_chart(tb)
 
         st.subheader("Sensibilité du panier moyen à 1°C")
-# On filtre les données valides pour la régression
-mask2 = temps.notna() & montants.notna()
-if mask2.sum() > 1:
-    lr = LinearRegression().fit(temps[mask2].values.reshape(-1,1), montants[mask2])
-    st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
-else:
-    st.write("⚠️ Pas assez de données pour calculer la sensibilité panier/°C.")
+        # On filtre les données valides pour la régression
+        mask2 = temps.notna() & montants.notna()
+        if mask2.sum() > 1:
+            lr = LinearRegression().fit(temps[mask2].values.reshape(-1,1), montants[mask2])
+            st.write(f"Variation moyenne du panier par °C : {lr.coef_[0]:.2f} €")
+        else:
+            st.write("⚠️ Pas assez de données pour calculer la sensibilité panier/°C.")
 
-# 3. Segmentation clients
+        # 3. Segmentation clients
         st.header("3. Segmentation clients")
         feats = df[['MONTANT','HOUR','TEMP']].dropna()
         scaler = StandardScaler().fit(feats)
@@ -201,5 +200,6 @@ else:
         st.info("Sections prédictives à venir.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
+
 
 
