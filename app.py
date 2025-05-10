@@ -15,7 +15,6 @@ file_tx = st.sidebar.file_uploader("Transactions (Test)", type=["csv", "xlsx"], 
 file_merch = st.sidebar.file_uploader("Caractéristiques marchands (Deals Insights)", type=["csv", "xlsx"], key="merch")
 file_weather = st.sidebar.file_uploader("Données météo (Synop Essentials)", type=["csv", "xlsx"], key="weather")
 
-# Lecture tolérante
 @st.cache_data
 def read_file(uploaded):
     if uploaded is None:
@@ -37,89 +36,123 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     st.success("✅ Tous les fichiers chargés")
 
     # --- 2. Préparation et fusion ---
-    # Nettoyage montant
-    df_tx['MONTANT'] = df_tx['MONTANT'].astype(str).str.replace(r"[^0-9,.-]", '', regex=True).str.replace(',', '.').astype(float)
-    # DATETIME
-    df_tx['DATETIME'] = pd.to_datetime(df_tx['DATE'].astype(str) + ' ' + df_tx['HEURE'].astype(str), dayfirst=True, errors='coerce')
+    df_tx['MONTANT'] = (
+        df_tx['MONTANT'].astype(str)
+               .str.replace(r"[^0-9,.-]", '', regex=True)
+               .str.replace(',', '.')
+               .astype(float)
+    )
+    df_tx['DATETIME'] = pd.to_datetime(
+        df_tx['DATE'].astype(str) + ' ' + df_tx['HEURE'].astype(str),
+        dayfirst=True, errors='coerce'
+    )
     df_tx['HOUR'] = df_tx['DATETIME'].dt.hour
     df_tx['DAY'] = df_tx['DATETIME'].dt.date
     df_tx['WEEK'] = df_tx['DATETIME'].dt.to_period('W').apply(lambda r: r.start_time)
     df_tx['MONTH'] = df_tx['DATETIME'].dt.to_period('M').apply(lambda r: r.start_time)
 
-    # Fusion Merchants
-    df = df_tx.merge(df_merch[['REF_MARCHAND', 'Organization_type']], on='REF_MARCHAND', how='left')
-    df.rename(columns={'Organization_type': 'TYPE_COMMERCE'}, inplace=True)
-    # Fusion Weather
-    df = df.merge(df_weather[['CODE POSTAL', 'Température']], on='CODE POSTAL', how='left')
+    # Normalisation colonnes météo
+    df_weather.columns = (
+        df_weather.columns
+                  .str.strip()
+                  .str.replace(r'\s+', ' ', regex=True)
+                  .str.upper()
+    )
+    if 'TEMPÉRATURE' in df_weather.columns:
+        df_weather.rename(columns={'TEMPÉRATURE': 'TEMP'}, inplace=True)
+    if 'CODE POSTAL' not in df_weather.columns and 'CODE_POSTAL' in df_weather.columns:
+        df_weather.rename(columns={'CODE_POSTAL': 'CODE POSTAL'}, inplace=True)
+
+    # Fusion
+    df = (
+        df_tx
+        .merge(df_merch.rename(columns={'Organization_type': 'TYPE_COMMERCE'})[
+                   ['REF_MARCHAND', 'TYPE_COMMERCE']],
+               on='REF_MARCHAND', how='left')
+        .merge(df_weather[['CODE POSTAL', 'TEMP']], on='CODE POSTAL', how='left')
+    )
 
     # --- 3. Rapport BI détaillé ---
     if st.button("📄 Générer rapport BI détaillé"):
         st.header("1. Indicateurs descriptifs")
-        # Volume total
         total_tx = len(df)
         st.metric("Transactions totales", f"{total_tx:,}")
-        
-        # Par période
-        cols = st.columns(3)
-        cols[0].write("**Journée**")
+
+        # Calcul dynamique des périodes
+        n_days = df['DAY'].nunique()
         by_day = df.groupby('DAY').size()
-        cols[0].write(by_day)
-        cols[1].write("**Semaine**")
         by_week = df.groupby('WEEK').size()
-        cols[1].write(by_week)
-        cols[2].write("**Mois**")
         by_month = df.groupby('MONTH').size()
-        cols[2].write(by_month)
 
-        # Evolution périodique
-        st.subheader("Évolution périodique (T/T-1)")
-        evo = by_month.pct_change().fillna(0)
-        st.line_chart(evo)
+        if n_days == 1:
+            single_day = by_day.index[0]
+            st.subheader(f"Analyse pour la journée du {single_day}")
+            st.write({str(single_day): int(by_day.iloc[0])})
+        else:
+            cols = st.columns(3)
+            cols[0].write({str(day): int(count) for day, count in by_day.items()})
+            cols[1].write({str(week.date()): int(count) for week, count in by_week.items()})
+            cols[2].write({str(month.date()): int(count) for month, count in by_month.items()})
 
-        # Montant total et panier moyen
+        # Évolution périodique uniquement si plusieurs mois
+        if by_month.size > 1:
+            st.subheader("Évolution périodique (T/T-1)")
+            evo = by_month.pct_change().fillna(0)
+            st.line_chart(evo)
+
+        # CA et panier moyen
         ca_total = df['MONTANT'].sum()
         panier_moy = ca_total / total_tx
         st.metric("CA total (€)", f"{ca_total:,.2f}")
         st.metric("Panier moyen (€)", f"{panier_moy:,.2f}")
 
-        # Distribution des montants
+        # Distribution montants
         st.subheader("Distribution des montants")
         desc = df['MONTANT'].describe(percentiles=[0.1,0.25,0.5,0.75,0.9])
-        st.table(desc[['10%', '25%', '50%', '75%', '90%', 'mean']].rename({'10%':'P10','25%':'P25','50%':'Médiane','75%':'P75','90%':'P90','mean':'Moyenne'}))
+        st.table(desc[['10%', '25%', '50%', '75%', '90%', 'mean']]
+                  .rename({'10%':'P10','25%':'P25','50%':'Médiane',
+                           '75%':'P75','90%':'P90','mean':'Moyenne'}))
 
-        # Répartition par type de commerce
+        # Répartition par type
         st.header("Répartition par type de commerce")
-        top = df['TYPE_COMMERCE'].value_counts()
-        st.bar_chart(top)
+        st.bar_chart(df['TYPE_COMMERCE'].value_counts())
         ca_type = df.groupby('TYPE_COMMERCE')['MONTANT'].agg(['sum','count'])
         ca_type['panier_moy'] = ca_type['sum']/ca_type['count']
         st.dataframe(ca_type.sort_values('count', ascending=False))
 
         # Analyse spatiale
         st.header("Analyse spatiale par code postal")
-        by_cp = df.groupby('CODE POSTAL').agg(tx_count=('MONTANT','size'), ca=('MONTANT','sum'))
+        by_cp = df.groupby('CODE POSTAL').agg(
+            tx_count=('MONTANT','size'),
+            ca=('MONTANT','sum')
+        )
         by_cp['panier_moy'] = by_cp['ca']/by_cp['tx_count']
         st.dataframe(by_cp)
-        # TODO: heatmap géographique
 
         # Temporalité fine
         st.header("Temporalité fine")
-        # Horaire
         hourly = df.groupby('HOUR')['MONTANT'].agg(['count','mean'])
         fig, ax = plt.subplots(figsize=(6,3))
         hourly['count'].plot.bar(ax=ax)
         ax.set_title('Transactions par heure')
         st.pyplot(fig)
-        # Hebdo vs Week-end
+
+        # Semaine vs week-end avec remplissage
         df['WEEKEND'] = df['DATETIME'].dt.dayofweek >= 5
-        wb = df.groupby('WEEKEND').size()
-        st.write({'Semaine': wb[False], 'Week-end': wb[True]})
-        # Saisonnalité
-        st.line_chart(by_month)
+        wb = df.groupby('WEEKEND').size().reindex([False, True], fill_value=0)
+        st.write({
+            'Semaine': int(wb.loc[False]),
+            'Week-end': int(wb.loc[True])
+        })
+
+        # Saison si plusieurs mois
+        if by_month.size > 1:
+            st.line_chart(by_month)
 
         st.info("Les sections diagnostics et prédictives sont en cours d’implémentation.")
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
 
-# --- Agent Conversationnel ---
+# Agent conversationnel (inchangé)
+
 # ... (inchangé)
