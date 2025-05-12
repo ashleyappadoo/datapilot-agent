@@ -120,8 +120,8 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         st.dataframe(ca_type)
         top_tx = df['MARCHAND'].value_counts().head(5)
         top_ca = df.groupby('MARCHAND')['MONTANT'].sum().nlargest(5)
-        st.write("**Top 5 TPE par volume:**", top_tx)
-        st.write("**Top 5 TPE par CA:**", top_ca)
+        st.write("**Top 5 par volume:**", top_tx)
+        st.write("**Top 5 par CA:**", top_ca)
 
         # Capture figure descriptifs
         fig_desc, ax_desc = plt.subplots()
@@ -145,7 +145,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         fig_wk, ax_wk = plt.subplots()
         wk.plot(kind='bar', ax=ax_wk); plt.tight_layout(); st.pyplot(fig_wk)
 
-        # 3. Analyse spatiale par code postal
+                # 3. Analyse spatiale par code postal
         st.header("3. Analyse spatiale par code postal")
         spatial = df.groupby('CODE POSTAL').agg(
             tx_count=('MONTANT','size'),
@@ -155,6 +155,12 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         spatial = spatial.merge(df_geo, on='CODE POSTAL', how='left')
         st.dataframe(spatial)
         map_data = spatial.dropna(subset=['latitude','longitude'])
+        # Capture matplotlib scatter pour PPT
+        fig_spatial, ax_spat = plt.subplots()
+        spatial.plot.scatter(x='longitude', y='latitude', s=spatial['panier_moy']/spatial['panier_moy'].max()*200, ax=ax_spat)
+        ax_spat.set_title('Carte spatiale (taille ~ panier moyen)')
+        plt.tight_layout()
+        st.pyplot(fig_spatial)
         if not map_data.empty:
             st.subheader("Heatmap panier moyen")
             deck1 = pdk.Deck(
@@ -177,14 +183,14 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
                     'ScatterplotLayer',
                     data=map_data,
                     get_position=['longitude','latitude'],
-                    get_radius= 'tx_count * 500',
+                    get_radius='tx_count * 500',
                     get_fill_color=[200,30,0,160],
                     pickable=True
                 )]
             )
             st.pydeck_chart(deck2)
-        
-        # 4. Diagnostics météo
+
+        # 4. Diagnostics météo Diagnostics
         st.header("4. Diagnostics météo")
         corr = df[['TEMP','MONTANT']].corr().loc['TEMP','MONTANT']
         st.write(f"Corrélation temp/montant: {corr:.2f}")
@@ -249,10 +255,10 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
                 fig.savefig(tmp.name,bbox_inches='tight')
                 slide.shapes.add_picture(tmp.name,Inches(1),Inches(2),width=Inches(8))
 
-        out='rapport_bi.pptx'; prs.save(out)
+        out='smile_report_bi.pptx'; prs.save(out)
         st.success(f"🎉 Présentation générée : {out}")
         with open(out,'rb') as f: data=f.read()
-        st.download_button("⬇️ Télécharger le rapport PPTX",data=data,file_name=out,mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        st.download_button("⬇️ Télécharger le rapport",data=data,file_name=out,mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
     # --- Fonctions LLM ---
     def get_mean_by_type(): return {'mean_by_type':df.groupby('TYPE_COMMERCE')['MONTANT'].mean().to_dict()}
