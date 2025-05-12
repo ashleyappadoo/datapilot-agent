@@ -145,17 +145,46 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         fig_wk, ax_wk = plt.subplots()
         wk.plot(kind='bar', ax=ax_wk); plt.tight_layout(); st.pyplot(fig_wk)
 
-        # 3. Analyse spatiale
-        st.header("3. Analyse spatiale")
-        spatial = df.groupby('CODE POSTAL').agg(tx_count=('MONTANT','size'), ca=('MONTANT','sum')).reset_index()
-        spatial['panier_moy'] = spatial['ca']/spatial['tx_count']
+        # 3. Analyse spatiale par code postal
+        st.header("3. Analyse spatiale par code postal")
+        spatial = df.groupby('CODE POSTAL').agg(
+            tx_count=('MONTANT','size'),
+            ca=('MONTANT','sum')
+        ).reset_index()
+        spatial['panier_moy'] = spatial['ca'] / spatial['tx_count']
         spatial = spatial.merge(df_geo, on='CODE POSTAL', how='left')
         st.dataframe(spatial)
-        fig_spatial, ax_spat = plt.subplots()
-        spatial.plot.scatter(x='longitude',y='latitude',s=spatial['panier_moy']/spatial['panier_moy'].max()*200,ax=ax_spat)
-        ax_spat.set_title('Carte spatiale (taille ~ panier moyen)'); plt.tight_layout(); st.pyplot(fig_spatial)
-
-        # 4. Diagnostics
+        map_data = spatial.dropna(subset=['latitude','longitude'])
+        if not map_data.empty:
+            st.subheader("Heatmap panier moyen")
+            deck1 = pdk.Deck(
+                map_style='mapbox://styles/mapbox/light-v10',
+                initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
+                layers=[pdk.Layer(
+                    'HeatmapLayer',
+                    data=map_data,
+                    get_position=['longitude','latitude'],
+                    get_weight='panier_moy',
+                    radiusPixels=50
+                )]
+            )
+            st.pydeck_chart(deck1)
+            st.subheader("Scatter : montant total")
+            deck2 = pdk.Deck(
+                map_style='mapbox://styles/mapbox/light-v10',
+                initial_view_state=pdk.ViewState(latitude=46.5, longitude=2.5, zoom=5),
+                layers=[pdk.Layer(
+                    'ScatterplotLayer',
+                    data=map_data,
+                    get_position=['longitude','latitude'],
+                    get_radius= 'tx_count * 500',
+                    get_fill_color=[200,30,0,160],
+                    pickable=True
+                )]
+            )
+            st.pydeck_chart(deck2)
+        
+        # 4. Diagnostics météo
         st.header("4. Diagnostics météo")
         corr = df[['TEMP','MONTANT']].corr().loc['TEMP','MONTANT']
         st.write(f"Corrélation temp/montant: {corr:.2f}")
