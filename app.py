@@ -191,14 +191,14 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         try: cover.placeholders[1].text=pd.Timestamp.today().strftime("%d %B %Y")
         except: pass
 
-        # Map sections à figures
-        sections={
+                # Map sections à figures
+        sections = {
             "Indicateurs descriptifs": fig_desc,
             "Temporalité - volume": fig_temporal_nb,
             "Temporalité - panier": fig_temporal_avg,
-            "Spatiale ": fig_spatial,
-            "Diagnostics":"+"fig_corr",
-            "Segmentation": fig_seg
+            "Analyse spatiale": fig_spatial,
+            "Diagnostics météo": fig_corr,
+            "Segmentation client": fig_seg
         }
 
         for title,fig in sections.items():
