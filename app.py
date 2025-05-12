@@ -270,7 +270,9 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
     # --- Agent conversationnel ---
     st.header("💬 Interrogez l'agent BI")
-    if 'chat_history' not in st.session_state:
+    # Initialise l'historique, et assure-toi que c'est une liste
+    if 'chat_history' not in st.session_state or not isinstance(st.session_state.chat_history, list):
+        st.session_state.chat_history = []
         st.session_state.chat_history = []
 
     user_input = st.text_input("Votre question :", key='chat_input')
