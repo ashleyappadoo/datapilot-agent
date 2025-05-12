@@ -287,9 +287,22 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
                 fig.savefig(img_tmp.name, bbox_inches='tight')
                 slide.shapes.add_picture(img_tmp.name, Inches(1), Inches(2), width=Inches(8))
 
-        output = 'rapport_bi.pptx'
+        output = 'smile_rapport_bi.pptx'
         prs.save(output)
-        st.success(f"🎉 Présentation générée : {output}")
+        st.success(f"🎉 Votre Smile Report : {output}")
+
+        # Prépare le binaire du PPTX
+        with open(output, "rb") as f:
+            ppt_data = f.read()
+        
+        # Affiche un bouton de téléchargement
+        st.download_button(
+            label="⬇️ Télécharger le rapport",
+            data=ppt_data,
+            file_name=output,
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+
 
     # --- Fonctions exposées au LLM ---
     def get_mean_by_type():
