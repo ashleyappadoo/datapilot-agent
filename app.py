@@ -14,7 +14,7 @@ from pptx.util import Inches, Pt
 import tempfile
 
 st.set_page_config(layout="wide")
-st.title("Smile Agent – Rapport BI & Agent Conversationnel")
+st.title("Smile Agent (POC) – Rapport BI & Agent Conversationnel")
 
 # --- 1. Upload des 3 fichiers + modèle PPTX ---
 st.sidebar.header("Chargement des fichiers")
