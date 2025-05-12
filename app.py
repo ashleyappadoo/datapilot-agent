@@ -255,8 +255,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         resume.append("Panier moyen par type de commerce :")
         for t, m in mean_by_type.items():
             resume.append(f"  - {t} : {m:.2f} €")
-        st.session_state.summary_bi = "
-".join(resume)
+        st.session_state.summary_bi = "".join(resume)
 
     # Champ de saisie
     user_input = st.text_input("Votre question :", key="chat_input")
