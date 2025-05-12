@@ -7,6 +7,8 @@ import pydeck as pdk
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.linear_model import LinearRegression
+import json
+import openai
 
 st.set_page_config(layout="wide")
 st.title("Smile & Pay – Rapport BI & Agent Conversationnel")
