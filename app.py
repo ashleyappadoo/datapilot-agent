@@ -234,25 +234,11 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
             st.write("⚠️ Pas assez de données pour segmentation.")
 
         st.info("Sections prédictives (forecasting, alerting) à venir.")
-
-if st.button("Envoyer", key='send_btn') and user_input:
-        # Enregistre la question utilisateur
-        st.session_state.chat_history.append({'role':'user','content':user_input})
-        # Construit le prompt
-        messages = [{'role':'system','content':'Tu es un assistant BI expert. Utilise les outils disponibles.'}]
-        messages += st.session_state.chat_history
-        # Appel à l'API avec function calling
-        response = openai.chat.completions.create(
-            model='gpt-4-0613',
-            messages=messages,
-            functions=functions,
-              # --- Fonctions exposées au LLM ---
+    # --- Fonctions exposées au LLM ---
     def get_mean_by_type():
-        """Renvoie le panier moyen par type de commerce."""
         return {'mean_by_type': df.groupby('TYPE_COMMERCE')['MONTANT'].mean().to_dict()}
 
     def get_top_merchants(by='transactions', top_n=5):
-        """Renvoie les top marchands par nombre de transactions ou chiffre d'affaires."""
         if by == 'transactions':
             data = df['MARCHAND'].value_counts().head(top_n).to_dict()
         else:
@@ -260,19 +246,16 @@ if st.button("Envoyer", key='send_btn') and user_input:
         return {'top_merchants': data}
 
     def get_correlation():
-        """Renvoie le coefficient de corrélation Pearson entre température et montant."""
         corr = df[['TEMP','MONTANT']].corr().loc['TEMP','MONTANT']
         return {'correlation_temp_amount': float(corr)}
 
     def get_distribution(percentiles=[0.1,0.25,0.5,0.75,0.9]):
-        """Renvoie distribution des montants pour les percentiles spécifiés."""
         desc = df['MONTANT'].describe(percentiles=percentiles)
         result = {str(p): float(desc[f'{int(p*100)}%']) for p in percentiles}
         result['mean'] = float(desc['mean'])
         return {'distribution': result}
 
     def get_tpe_count_by_type():
-        """Renvoie le nombre de transactions par MODELE_TERMINAL et type de commerce."""
         data = df.groupby(['TYPE_COMMERCE','MODELE_TERMINAL']).size().reset_index(name='count')
         records = data.to_dict(orient='records')
         return {'tpe_count_by_type': records}
@@ -285,23 +268,29 @@ if st.button("Envoyer", key='send_btn') and user_input:
         {'name':'get_tpe_count_by_type','description':'Nombre de transactions par MODELE_TERMINAL et type de commerce','parameters':{'type':'object','properties':{},'required':[]}}
     ]
 
-    # --- Agent conversationnel avec function calling ---
+    # --- Agent conversationnel ---
     st.header("💬 Interrogez l'agent BI")
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
 
     user_input = st.text_input("Votre question :", key='chat_input')
-      function_call='auto'
+    if user_input and st.button("Envoyer", key='send_btn'):
+        st.session_state.chat_history.append({'role':'user','content':user_input})
+        messages = [{'role':'system','content':'Tu es un assistant BI expert. Utilise les outils disponibles.'}]
+        messages += st.session_state.chat_history
+        response = openai.chat.completions.create(
+            model='gpt-4-0613',
+            messages=messages,
+            functions=functions,
+            function_call='auto'
         )
         msg = response.choices[0].message
-        # Si l'agent appelle une fonction
         if hasattr(msg,'function_call') and msg.function_call:
             fn = msg.function_call.name
             args = json.loads(msg.function_call.arguments or '{}')
             result = globals()[fn](**args)
-            # Enregistre la réponse de la fonction (pour contexte, pas affiché)
+            # mémoire pour contexte
             st.session_state.chat_history.append({'role':'function','name':fn,'content':json.dumps(result)})
-            # Second appel pour formuler la réponse
             follow = openai.chat.completions.create(
                 model='gpt-4-0613',
                 messages=[
@@ -313,15 +302,13 @@ if st.button("Envoyer", key='send_btn') and user_input:
             reply = follow.choices[0].message.content
         else:
             reply = msg.content
-        # Ajoute la réponse assistant
         st.session_state.chat_history.append({'role':'assistant','content':reply})
 
-    # Affichage historique sans montrer les appels fonction
+    # Affichage historique (sans fonctions)
     for chat in st.session_state.chat_history:
-        if chat['role'] not in ['user','assistant']:
-            continue
-        icon = '👤' if chat['role']=='user' else '🤖'
-        st.markdown(f"**{icon}** {chat['content']}")
+        if chat['role'] in ['user','assistant']:
+            icon = '👤' if chat['role']=='user' else '🤖'
+            st.markdown(f"**{icon}** {chat['content']}")
 else:
     st.warning("Chargez d'abord les 3 fichiers Excel.")
 
