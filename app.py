@@ -307,47 +307,57 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
     st.session_state.vision_history.append(vision_input)
     st.info("🔍 L'agent Smile Vision réfléchit…")
 
-    # 1) Charger et normaliser la météo complète
+    # Charger et normaliser df_weather_full
     df_weather_full = read_file(file_weather)
-    df_weather_full.rename(columns={
-        'Date': 'DATE',
-        'Température': 'TEMP',
-        'CODE_POSTAL': 'CODE POSTAL'
-    }, inplace=True)
-    # uniformiser DATE en datetime64 et normaliser (minuit)
-    df_weather_full['DATE'] = (
-        pd.to_datetime(df_weather_full['DATE'], dayfirst=True, errors='coerce')
+    df_weather_full.columns = (
+        df_weather_full.columns
+            .str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+            .str.upper()
+    )
+    # Renommer TEMPÉRATURE → TEMP
+    if "TEMPÉRATURE" in df_weather_full.columns:
+        df_weather_full.rename(columns={"TEMPÉRATURE": "TEMP"}, inplace=True)
+    # Renommer CODE_POSTAL → CODE POSTAL
+    if "CODE_POSTAL" in df_weather_full.columns:
+        df_weather_full.rename(columns={"CODE_POSTAL": "CODE POSTAL"}, inplace=True)
+    # Uniformiser la DATE en datetime et normaliser (00:00:00)
+    df_weather_full["DATE"] = (
+        pd.to_datetime(df_weather_full["DATE"], dayfirst=True, errors="coerce")
           .dt.normalize()
     )
-    # uniformiser le format du code postal
-    df_weather_full['CODE POSTAL'] = (
-        df_weather_full['CODE POSTAL']
-          .astype(str)
-          .str.zfill(5)
-    )
+    # Uniformiser CODE POSTAL à 5 chiffres
+    df_weather_full["CODE POSTAL"] = df_weather_full["CODE POSTAL"].astype(str).str.zfill(5)
+    
 
-    # 2) Préparer les transactions journalières avec type et météo
+    # Copier et normaliser df_tx
     df_tx_j = df_tx.copy()
-    # convertir en datetime64 puis normaliser
-    df_tx_j['DATE'] = (
-        pd.to_datetime(df_tx_j['DATETIME'], errors='coerce')
+    df_tx_j.columns = (
+        df_tx_j.columns
+            .str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+            .str.upper()
+    )
+    # Créer DATE à partir de DATETIME
+    df_tx_j["DATE"] = (
+        pd.to_datetime(df_tx_j["DATETIME"], errors="coerce")
           .dt.normalize()
     )
-    df_tx_j['CODE POSTAL'] = (
-        df_tx_j['CODE POSTAL']
-          .astype(str)
-          .str.zfill(5)
-    )
+    # Uniformiser le CODE POSTAL
+    df_tx_j["CODE POSTAL"] = df_tx_j["CODE POSTAL"].astype(str).str.zfill(5)
+
 
     df_tx_j = (
         df_tx_j
         .merge(
-            df_merch.rename(columns={'Organization_type':'TYPE_COMMERCE'})[['REF_MARCHAND','TYPE_COMMERCE']],
-            on='REF_MARCHAND', how='left'
+            df_merch.rename(columns={"Organization_type": "TYPE_COMMERCE"})[
+                ["REF_MARCHAND", "TYPE_COMMERCE"]
+            ],
+            on="REF_MARCHAND", how="left"
         )
         .merge(
-            df_weather_full[['DATE','CODE POSTAL','TEMP']],
-            on=['DATE','CODE POSTAL'], how='left'
+            df_weather_full[["DATE", "CODE POSTAL", "TEMP"]],
+            on=["DATE", "CODE POSTAL"], how="left"
         )
     )
 
