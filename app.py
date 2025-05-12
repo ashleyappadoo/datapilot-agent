@@ -9,65 +9,51 @@ from sklearn.cluster import KMeans, DBSCAN
 from sklearn.linear_model import LinearRegression
 import json
 import openai
+from pptx import Presentation
+from pptx.util import Inches
+import tempfile
 
 st.set_page_config(layout="wide")
 st.title("Smile Agent – Rapport BI & Agent Conversationnel")
 
-# --- 1. Upload des 3 fichiers ---
+# --- 1. Upload des 3 fichiers + modèle PPTX ---
 st.sidebar.header("Chargement des fichiers")
-file_tx = st.sidebar.file_uploader("Transactions", ["csv","xlsx"], key="tx")
-file_merch = st.sidebar.file_uploader("Données Pipedrive", ["csv","xlsx"], key="merch")
+file_tx = st.sidebar.file_uploader("Transactions (Test)", ["csv","xlsx"], key="tx")
+file_merch = st.sidebar.file_uploader("Caractéristiques marchands", ["csv","xlsx"], key="merch")
 file_weather = st.sidebar.file_uploader("Données météo", ["csv","xlsx"], key="weather")
+file_template = st.sidebar.file_uploader("Modèle PPTX (exemple.pptx)", type=["pptx"], key="template")
 
 @st.cache_data
 def read_file(u):
-    if not u: return None
+    if u is None:
+        return None
     if u.name.lower().endswith('.csv'):
-        try: return pd.read_csv(u, sep=None, engine='python')
-        except: return pd.read_csv(u)
+        try:
+            return pd.read_csv(u, sep=None, engine='python')
+        except:
+            return pd.read_csv(u)
     return pd.read_excel(u, engine='openpyxl')
 
+# Lecture des fichiers
 df_tx = read_file(file_tx)
 df_merch = read_file(file_merch)
 df_weather = read_file(file_weather)
 
 if df_tx is not None and df_merch is not None and df_weather is not None:
     st.success("✅ Tous les fichiers chargés")
-
     # --- 2. Préparation et fusion ---
-    df_tx['MONTANT'] = (
-        df_tx['MONTANT'].astype(str)
-               .str.replace(r"[^0-9,.-]", '', regex=True)
-               .str.replace(',', '.')
-               .astype(float)
-    )
-    df_tx['DATETIME'] = pd.to_datetime(
-        df_tx['DATE'].astype(str) + ' ' + df_tx['HEURE'].astype(str),
-        dayfirst=True, errors='coerce'
-    )
+    # (Nettoyage, datetime, fusion marchands & météo)
+    df_tx['MONTANT'] = df_tx['MONTANT'].astype(str).str.replace(r"[^0-9,.-]", '', regex=True).str.replace(',', '.').astype(float)
+    df_tx['DATETIME'] = pd.to_datetime(df_tx['DATE'].astype(str) + ' ' + df_tx['HEURE'].astype(str), dayfirst=True, errors='coerce')
     df_tx['HOUR'] = df_tx['DATETIME'].dt.hour
     df_tx['DAY'] = df_tx['DATETIME'].dt.date
     df_tx['WEEK'] = df_tx['DATETIME'].dt.to_period('W').apply(lambda r: r.start_time)
     df_tx['MONTH'] = df_tx['DATETIME'].dt.to_period('M').apply(lambda r: r.start_time)
-
-    df_weather.columns = (
-        df_weather.columns
-                  .str.strip()
-                  .str.replace(r'\s+', ' ', regex=True)
-                  .str.upper()
-    )
-    if 'TEMPÉRATURE' in df_weather.columns:
-        df_weather.rename(columns={'TEMPÉRATURE': 'TEMP'}, inplace=True)
-    if 'CODE POSTAL' not in df_weather.columns and 'CODE_POSTAL' in df_weather.columns:
-        df_weather.rename(columns={'CODE_POSTAL': 'CODE POSTAL'}, inplace=True)
-
-    df = (
-        df_tx
-        .merge(df_merch.rename(columns={'Organization_type': 'TYPE_COMMERCE'})[['REF_MARCHAND', 'TYPE_COMMERCE']],
-               on='REF_MARCHAND', how='left')
-        .merge(df_weather[['CODE POSTAL', 'TEMP']], on='CODE POSTAL', how='left')
-    )
-
+    df_weather.columns = df_weather.columns.str.strip().str.replace(r"\s+", ' ', regex=True).str.upper()
+    if 'TEMPÉRATURE' in df_weather.columns: df_weather.rename(columns={'TEMPÉRATURE':'TEMP'}, inplace=True)
+    if 'CODE_POSTAL' in df_weather.columns and 'CODE POSTAL' not in df_weather.columns: df_weather.rename(columns={'CODE_POSTAL':'CODE POSTAL'}, inplace=True)
+    df = df_tx.merge(df_merch.rename(columns={'Organization_type':'TYPE_COMMERCE'})[['REF_MARCHAND','TYPE_COMMERCE']], on='REF_MARCHAND', how='left')
+    df = df.merge(df_weather[['CODE POSTAL','TEMP']], on='CODE POSTAL', how='left')
     nomi = pgeocode.Nominatim('fr')
     unique_cp = df['CODE POSTAL'].astype(str).str.zfill(5).drop_duplicates().tolist()
     geo = nomi.query_postal_code(unique_cp)
@@ -235,54 +221,53 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
         st.info("Sections prédictives (forecasting, alerting) à venir.")
 
-        # --- Génération automatique d'un PowerPoint ---
-        from pptx import Presentation
-        from pptx.util import Inches
-        import tempfile
+         # Validation du template
+        if file_template is None:
+            st.error("Veuillez uploader le modèle PPTX dans la barre latérale pour générer la présentation.")
+            st.stop()
+        # Sauvegarde temporaire du modèle
+        tmp_tpl = tempfile.NamedTemporaryFile(suffix='.pptx', delete=False)
+        tmp_tpl.write(file_template.read())
+        tmp_tpl.flush()
+        prs = Presentation(tmp_tpl.name)
 
-        # Charge le modèle PPTX
-        template_path = 'exemple.pptx'
-        prs = Presentation(template_path)
+        # Mise à jour page de garde
+        cover = prs.slides[0]
+        cover.shapes[0].text = "Smile Magic Report"
+        cover.shapes[1].text = pd.Timestamp.today().strftime("%d %B %Y")
 
-        # Mise à jour de la page de garde
-        cover_slide = prs.slides[0]
-        # Suppose titre placeholder 0 et date placeholder 1
-        cover_slide.shapes[0].text = f"Smile Magic Report"
-        cover_slide.shapes[1].text = pd.Timestamp.today().strftime("%d %B %Y")
-
-        # Dictionnaire des sections et des figures générées
+        # Sections à traiter et leurs figures
         sections = {
-            "Indicateurs descriptifs": None,  # Remplace None par la figure matplotlib correspondante
-            "Temporalité fine": None,
-            "Analyse spatiale": None,
-            "Corrélations et diagnostics": None,
-            "Segmentation client": None
+            "Indicateurs descriptifs": plt.gcf(),  # récupère figure active ou stockez vos fig
+            "Temporalité fine": plt.gcf(),
+            "Analyse spatiale": plt.gcf(),
+            "Corrélations et diagnostics": plt.gcf(),
+            "Segmentation client": plt.gcf()
         }
 
-        # Pour chaque section, ajoute une diapositive
         for title, fig in sections.items():
             slide = prs.slides.add_slide(prs.slide_layouts[1])
             slide.shapes.title.text = title
-            # Explication via OpenAI
-            prompt = f"Explique en quelques phrases les résultats de la section '{title}' pour un rapport BI."  
+            # Explication auto via OpenAI
+            prompt = f"Explique en quelques phrases les résultats de la section '{title}' d'un rapport BI basé sur des transactions." 
             resp = openai.chat.completions.create(
                 model="gpt-4",
-                messages=[{"role":"system","content":"Tu es un expert en BI."},
-                          {"role":"user","content":prompt}]
+                messages=[
+                    {"role":"system","content":"Tu es un expert BI."},
+                    {"role":"user","content":prompt}
+                ]
             )
             explanation = resp.choices[0].message.content
-            # Place l'explication dans le sous-titre
             slide.placeholders[1].text = explanation
-            # Ajout de la figure au slide
+            # Ajout graphique
             if fig is not None:
-                tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-                fig.savefig(tmp.name, bbox_inches='tight')
-                slide.shapes.add_picture(tmp.name, Inches(1), Inches(2), width=Inches(8))
+                img_tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                fig.savefig(img_tmp.name, bbox_inches='tight')
+                slide.shapes.add_picture(img_tmp.name, Inches(1), Inches(2), width=Inches(8))
 
-        # Sauvegarde et lien de téléchargement
-        output_path = 'rapport_bi.pptx'
-        prs.save(output_path)
-        st.success(f"🎉 Présentation PowerPoint générée : {output_path}")    
+        output = 'rapport_bi.pptx'
+        prs.save(output)
+        st.success(f"🎉 Présentation générée : {output}")
 
     # --- Fonctions exposées au LLM ---
     def get_mean_by_type():
