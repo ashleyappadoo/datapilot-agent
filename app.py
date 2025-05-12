@@ -298,47 +298,70 @@ else:
 # === 5. Smile Vision 🪄 — Agent de prévision ===
 st.header("✨ Smile Vision 🪄 — Prédiction transactions 7 prochains jours")
 
-# Initialisation de l’historique de vision (pour conservation de la question)
+# Initialisation de l’historique de vision
 if "vision_history" not in st.session_state:
     st.session_state.vision_history = []
 
 vision_input = st.text_input("Pose ta question à Smile Vision :", key="vision_input")
 if st.button("🔮 Envoyer à Smile Vision") and vision_input:
     st.session_state.vision_history.append(vision_input)
-    # On attend forcément une phrase de type « prédit les transactions… »
     st.info("🔍 L'agent Smile Vision réfléchit…")
 
-    # 1) Préparation de l’historique journalier par type de commerce
-    # On part du df complet (transactions + type + météo journalière)
-    # Recalculez la météo journalière moyenne si besoin :
-    df_weather_full = read_file(file_weather)  # Excel complet, avec colonnes 'Date', 'CODE POSTAL', 'Température'
-    # Normalisation des noms
+    # 1) Charger et normaliser la météo complète
+    df_weather_full = read_file(file_weather)
     df_weather_full.rename(columns={
-        'Date': 'DATE', 'Température': 'TEMP', 'CODE_POSTAL': 'CODE POSTAL'
+        'Date': 'DATE',
+        'Température': 'TEMP',
+        'CODE_POSTAL': 'CODE POSTAL'
     }, inplace=True)
-    df_weather_full['DATE'] = pd.to_datetime(df_weather_full['DATE'], dayfirst=True, errors='coerce')
-    
-    # On reconstitue un df complet journalier
+    # uniformiser DATE en datetime64 et normaliser (minuit)
+    df_weather_full['DATE'] = (
+        pd.to_datetime(df_weather_full['DATE'], dayfirst=True, errors='coerce')
+          .dt.normalize()
+    )
+    # uniformiser le format du code postal
+    df_weather_full['CODE POSTAL'] = (
+        df_weather_full['CODE POSTAL']
+          .astype(str)
+          .str.zfill(5)
+    )
+
+    # 2) Préparer les transactions journalières avec type et météo
     df_tx_j = df_tx.copy()
-    df_tx_j['DATE'] = df_tx_j['DATETIME'].dt.date
-    df_tx_j = df_tx_j.merge(
-        df_merch.rename(columns={'Organization_type':'TYPE_COMMERCE'})[['REF_MARCHAND','TYPE_COMMERCE']],
-        on='REF_MARCHAND', how='left'
-    ).merge(
-        df_weather_full[['DATE','CODE POSTAL','TEMP']],
-        on=['DATE','CODE POSTAL'], how='left'
+    # convertir en datetime64 puis normaliser
+    df_tx_j['DATE'] = (
+        pd.to_datetime(df_tx_j['DATETIME'], errors='coerce')
+          .dt.normalize()
+    )
+    df_tx_j['CODE POSTAL'] = (
+        df_tx_j['CODE POSTAL']
+          .astype(str)
+          .str.zfill(5)
+    )
+
+    df_tx_j = (
+        df_tx_j
+        .merge(
+            df_merch.rename(columns={'Organization_type':'TYPE_COMMERCE'})[['REF_MARCHAND','TYPE_COMMERCE']],
+            on='REF_MARCHAND', how='left'
+        )
+        .merge(
+            df_weather_full[['DATE','CODE POSTAL','TEMP']],
+            on=['DATE','CODE POSTAL'], how='left'
+        )
     )
 
     hist = (
         df_tx_j
         .groupby(['DATE','TYPE_COMMERCE'])
-        .agg(tx_count=('MONTANT','size'),
-             temp_moy=('TEMP','mean'))
+        .agg(
+            tx_count=('MONTANT','size'),
+            temp_moy=('TEMP','mean')
+        )
         .reset_index()
     )
 
-    # 2) Entraînement d’un modèle linéaire par type de commerce
-    from sklearn.linear_model import LinearRegression
+    # 3) Entraînement d’un modèle linéaire par type de commerce
     models = {}
     for typ in hist['TYPE_COMMERCE'].unique():
         sub = hist[hist['TYPE_COMMERCE']==typ].dropna()
@@ -346,16 +369,16 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
             lr = LinearRegression().fit(sub[['temp_moy']], sub['tx_count'])
             models[typ] = lr
 
-    # 3) Constitution des 7 jours à venir + météo
-    # Pour POC, on prend df_weather_full jusqu’à 7 jours après la dernière date connue
+    # 4) Préparer les 7 jours suivants et leur météo
     last_date = hist['DATE'].max()
-    futura = df_weather_full[df_weather_full['DATE'] > last_date] \
-             .sort_values('DATE') \
-             .drop_duplicates('DATE') \
-             .head(7) \
-             .loc[:, ['DATE','TEMP']]
+    futura = (
+        df_weather_full[df_weather_full['DATE'] > last_date]
+        .drop_duplicates('DATE')
+        .sort_values('DATE')
+        .head(7)[['DATE','TEMP']]
+    )
 
-    # 4) Calcul des prévisions
+    # 5) Calculer les prévisions
     preds = []
     for typ, lr in models.items():
         y_pred = lr.predict(futura[['TEMP']])
@@ -365,7 +388,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         preds.append(tmp)
     df_pred = pd.concat(preds, ignore_index=True)
 
-    # 5) Affichage du graphique historique vs prévision
+    # 6) Afficher le graphique historique vs prévisions
     fig, ax = plt.subplots(figsize=(8,4))
     for typ in hist['TYPE_COMMERCE'].unique():
         sub_h = hist[hist['TYPE_COMMERCE']==typ]
