@@ -307,7 +307,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
     st.session_state.vision_history.append(vision_input)
     st.info("🔍 L'agent Smile Vision réfléchit…")
 
-    # Charger et normaliser df_weather_full
+    # 1) Charger et normaliser df_weather_full
     df_weather_full = read_file(file_weather)
     df_weather_full.columns = (
         df_weather_full.columns
@@ -315,22 +315,20 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
             .str.replace(r"\s+", " ", regex=True)
             .str.upper()
     )
-    # Renommer TEMPÉRATURE → TEMP
     if "TEMPÉRATURE" in df_weather_full.columns:
         df_weather_full.rename(columns={"TEMPÉRATURE": "TEMP"}, inplace=True)
-    # Renommer CODE_POSTAL → CODE POSTAL
     if "CODE_POSTAL" in df_weather_full.columns:
         df_weather_full.rename(columns={"CODE_POSTAL": "CODE POSTAL"}, inplace=True)
-    # Uniformiser la DATE en datetime et normaliser (00:00:00)
+    
+    # Normaliser DATE → string YYYY-MM-DD
     df_weather_full["DATE"] = (
         pd.to_datetime(df_weather_full["DATE"], dayfirst=True, errors="coerce")
-          .dt.normalize()
+          .dt.strftime("%Y-%m-%d")
     )
-    # Uniformiser CODE POSTAL à 5 chiffres
+    # Uniformiser CODE POSTAL
     df_weather_full["CODE POSTAL"] = df_weather_full["CODE POSTAL"].astype(str).str.zfill(5)
     
-
-    # Copier et normaliser df_tx
+    # 2) Préparer df_tx_j au même format pour merger
     df_tx_j = df_tx.copy()
     df_tx_j.columns = (
         df_tx_j.columns
@@ -338,15 +336,13 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
             .str.replace(r"\s+", " ", regex=True)
             .str.upper()
     )
-    # Créer DATE à partir de DATETIME
     df_tx_j["DATE"] = (
         pd.to_datetime(df_tx_j["DATETIME"], errors="coerce")
-          .dt.normalize()
+          .dt.strftime("%Y-%m-%d")
     )
-    # Uniformiser le CODE POSTAL
     df_tx_j["CODE POSTAL"] = df_tx_j["CODE POSTAL"].astype(str).str.zfill(5)
-
-
+    
+    # 3) Merge fiable sur 2 strings
     df_tx_j = (
         df_tx_j
         .merge(
