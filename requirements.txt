@@ -6,3 +6,4 @@ python-dotenv
 openpyxl
 scikit-learn
 pgeocode
+python-pptx>=0.6.21
