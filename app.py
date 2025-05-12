@@ -233,8 +233,13 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
         # Mise à jour page de garde
         cover = prs.slides[0]
-        cover.shapes[0].text = "Smile Magic Report"
-        cover.shapes[1].text = pd.Timestamp.today().strftime("%d %B %Y")
+        # Titre
+        cover.shapes.title.text = "Smile Magic Report"
+        # Date (s'il y a un placeholder subtitle)
+        try:
+            cover.placeholders[1].text = pd.Timestamp.today().strftime("%d %B %Y")
+        except Exception:
+            pass
 
         # Sections à traiter et leurs figures
         sections = {
