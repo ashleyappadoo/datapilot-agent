@@ -403,19 +403,23 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         tmp['TYPE_COMMERCE'] = typ
         tmp['tx_pred'] = y_pred
         preds.append(tmp)
-    df_pred = pd.concat(preds, ignore_index=True)
 
-    # 6) Afficher le graphique historique vs prévisions
-    fig, ax = plt.subplots(figsize=(8,4))
-    for typ in hist['TYPE_COMMERCE'].unique():
-        sub_h = hist[hist['TYPE_COMMERCE']==typ]
-        ax.plot(sub_h['DATE'], sub_h['tx_count'], label=f"{typ} (historique)")
-        sub_p = df_pred[df_pred['TYPE_COMMERCE']==typ]
-        ax.plot(sub_p['DATE'], sub_p['tx_pred'], '--', label=f"{typ} (prévu)")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Nb transactions")
-    ax.set_title("Historique vs prévisions 7 jours par type de commerce")
-    ax.legend(loc='upper left', fontsize='small')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig)
+    if not preds:
+        st.warning("⚠️ Impossible de prédire : pas assez de données ou pas de modèle entraîné.")
+    else:
+        df_pred = pd.concat(preds, ignore_index=True)
+
+        # 6) Afficher le graphique historique vs prévisions
+        fig, ax = plt.subplots(figsize=(8,4))
+        for typ in hist['TYPE_COMMERCE'].unique():
+            sub_h = hist[hist['TYPE_COMMERCE']==typ]
+            ax.plot(sub_h['DATE'], sub_h['tx_count'], label=f"{typ} (historique)")
+            sub_p = df_pred[df_pred['TYPE_COMMERCE']==typ]
+            ax.plot(sub_p['DATE'], sub_p['tx_pred'], '--', label=f"{typ} (prévu)")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Nb transactions")
+        ax.set_title("Historique vs prévisions 7 jours par type de commerce")
+        ax.legend(loc='upper left', fontsize='small')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
