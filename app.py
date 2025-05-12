@@ -243,5 +243,72 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
             st.write("⚠️ Pas assez de données pour segmentation.")
 
         st.info("Sections prédictives (forecasting, alerting) à venir.")
+
+        # === ÉTAPE 2 – AGENT CONVERSATIONNEL ===
+        st.header("💬 Interrogez l'agent BI")
+
+        # Initialisation de l'historique de conversation et du résumé
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+
+        # Génération automatique d’un résumé simplifié des insights
+        if "summary_bi" not in st.session_state:
+            resume = f"Nombre total de transactions : {total_tx}\n"
+            resume += f"Chiffre d'affaires total : {ca_total:.2f} €\n"
+            resume += f"Panier moyen : {panier_moy:.2f} €\n"
+            resume += f"Corrélation température/montant : {corr:.2f}\n"
+            resume += f"Top marchands par volume : {', '.join(top_tx.index)}\n"
+            st.session_state.summary_bi = resume
+
+        # Champ de chat utilisateur
+        user_input = st.text_input("Votre question :", key="chat_input")
+        if st.button("Envoyer", key="send_btn") and user_input:
+            # Construction du prompt avec historique + résumé
+            messages = [
+                {"role": "system", "content": "Tu es un assistant expert en analyse de données transactionnelles. Réponds en français."},
+                {"role": "user", "content": f"Voici un résumé des analyses disponibles :\n{st.session_state.summary_bi}"},
+            ] + st.session_state.chat_history[-5:] + [
+                {"role": "user", "content": user_input}
+            ]
+
+            with st.spinner("L'agent réfléchit..."):
+                import openai
+                response = openai.chat.completions.create(
+                    model="gpt-4",
+                    messages=messages
+                )
+                reply = response.choices[0].message.content
+                st.session_state.chat_history.append({"role": "user", "content": user_input})
+                st.session_state.chat_history.append({"role": "assistant", "content": reply})
+
+            # Affichage et exécution du code si besoin
+            if "```python" in reply:
+                import re
+                code = re.search(r"```python\n(.*?)```", reply, re.DOTALL)
+                if code:
+                    st.markdown("**Code généré :**")
+                    st.code(code.group(1), language="python")
+                    try:
+                        exec(code.group(1), {}, {"df": df})
+                    except Exception as e:
+                        st.error(f"Erreur d'exécution : {e}")
+                else:
+                    st.markdown(reply)
+            else:
+                st.markdown(reply)
+
+        # Affichage historique conversation
+        for msg in st.session_state.chat_history:
+            role = "👤" if msg["role"] == "user" else "🤖"
+            st.markdown(f"**{role} :** {msg['content']}")
+
+# === FIN APP ===
+
+
 else:
     st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
+
+
+
+
+
