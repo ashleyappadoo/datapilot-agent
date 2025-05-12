@@ -319,16 +319,17 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         df_weather_full.rename(columns={"TEMPÉRATURE": "TEMP"}, inplace=True)
     if "CODE_POSTAL" in df_weather_full.columns:
         df_weather_full.rename(columns={"CODE_POSTAL": "CODE POSTAL"}, inplace=True)
-    
-    # Normaliser DATE → string YYYY-MM-DD
+
+    # Normaliser DATE → string YYYY-MM-DD + uniformiser CODE POSTAL
     df_weather_full["DATE"] = (
         pd.to_datetime(df_weather_full["DATE"], dayfirst=True, errors="coerce")
           .dt.strftime("%Y-%m-%d")
     )
-    # Uniformiser CODE POSTAL
-    df_weather_full["CODE POSTAL"] = df_weather_full["CODE POSTAL"].astype(str).str.zfill(5)
-    
-    # 2) Préparer df_tx_j au même format pour merger
+    df_weather_full["CODE POSTAL"] = (
+        df_weather_full["CODE POSTAL"].astype(str).str.zfill(5)
+    )
+
+    # 2) Préparer df_tx_j au même format
     df_tx_j = df_tx.copy()
     df_tx_j.columns = (
         df_tx_j.columns
@@ -340,10 +341,11 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         pd.to_datetime(df_tx_j["DATETIME"], errors="coerce")
           .dt.strftime("%Y-%m-%d")
     )
-    df_tx_j["CODE POSTAL"] = df_tx_j["CODE POSTAL"].astype(str).str.zfill(5)
+    df_tx_j["CODE POSTAL"] = (
+        df_tx_j["CODE POSTAL"].astype(str).str.zfill(5)
+    )
 
-    
-    # 3) Merge fiable sur 2 strings
+    # 3) Merge transactions ↔ marchands ↔ météo
     df_tx_j = (
         df_tx_j
         .merge(
@@ -358,26 +360,36 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         )
     )
 
+    # 4) Construire la table historique et la compléter pour les jours sans transaction
     hist = (
         df_tx_j
         .groupby(['DATE','TYPE_COMMERCE'])
-        .agg(
-            tx_count=('MONTANT','size'),
-            temp_moy=('TEMP','mean')
-        )
+        .agg(tx_count=('MONTANT','size'), temp_moy=('TEMP','mean'))
         .reset_index()
     )
-    
-    # 3) Entraînement d’un modèle linéaire par type de commerce
+    # grille complète des dates × types
+    toutes_dates = pd.date_range(start=hist['DATE'].min(), end=hist['DATE'].max(), freq='D')
+    tous_types   = hist['TYPE_COMMERCE'].unique()
+    idx = pd.MultiIndex.from_product([toutes_dates, tous_types], names=['DATE','TYPE_COMMERCE'])
+    hist = (
+        hist
+        .set_index(['DATE','TYPE_COMMERCE'])
+        .reindex(idx, fill_value=0)
+        .reset_index()
+    )
+    # réinjecter la température moyenne journalière
+    temp_moyenne_j = df_weather_full.groupby('DATE')['TEMP'].mean()
+    hist['temp_moy'] = hist['DATE'].map(temp_moyenne_j)
+
+    # 5) Entraînement d’un modèle linéaire par type de commerce
     models = {}
     for typ in hist['TYPE_COMMERCE'].unique():
         sub = hist[hist['TYPE_COMMERCE']==typ].dropna()
         if len(sub) >= 2:
-            lr = LinearRegression().fit(sub[['temp_moy']], sub['tx_count'])
-            models[typ] = lr
+            models[typ] = LinearRegression().fit(sub[['temp_moy']], sub['tx_count'])
 
-    # 4) Préparer les 7 jours suivants et leur météo
-    last_date = hist['DATE'].max()
+    # 6) Préparer les 7 jours suivants depuis la dernière date connue
+    last_date = pd.to_datetime(hist['DATE']).max().strftime("%Y-%m-%d")
     futura = (
         df_weather_full[df_weather_full['DATE'] > last_date]
         .drop_duplicates('DATE')
@@ -385,7 +397,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         .head(7)[['DATE','TEMP']]
     )
 
-    # 5) Calculer les prévisions
+    # 7) Calculer et afficher les prévisions
     preds = []
     for typ, lr in models.items():
         y_pred = lr.predict(futura[['TEMP']])
@@ -398,8 +410,6 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         st.warning("⚠️ Impossible de prédire : pas assez de données ou pas de modèle entraîné.")
     else:
         df_pred = pd.concat(preds, ignore_index=True)
-
-        # 6) Afficher le graphique historique vs prévisions
         fig, ax = plt.subplots(figsize=(8,4))
         for typ in hist['TYPE_COMMERCE'].unique():
             sub_h = hist[hist['TYPE_COMMERCE']==typ]
@@ -407,7 +417,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
             sub_p = df_pred[df_pred['TYPE_COMMERCE']==typ]
             ax.plot(sub_p['DATE'], sub_p['tx_pred'], '--', label=f"{typ} (prévu)")
         ax.set_xlabel("Date")
-        ax.set_ylabel("Nb transactions")
+        ax.set_ylabel("Nombre de transactions")
         ax.set_title("Historique vs prévisions 7 jours par type de commerce")
         ax.legend(loc='upper left', fontsize='small')
         plt.xticks(rotation=45)
