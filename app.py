@@ -342,15 +342,6 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
     )
     df_tx_j["CODE POSTAL"] = df_tx_j["CODE POSTAL"].astype(str).str.zfill(5)
 
-    """#--Début vérif
-    # Debug : vérifions noms de colonnes et types
-    st.write("⚙️ Colonnes météo :", df_weather_full.columns.tolist())
-    st.write("⚙️ Colonnes transactions :", df_tx_j.columns.tolist())
-    st.write("⚙️ Types météo :", df_weather_full[['DATE','CODE POSTAL']].dtypes.to_dict())
-    st.write("⚙️ Types tx_j  :", df_tx_j[['DATE','CODE POSTAL']].dtypes.to_dict())
-    st.write("⚙️ Extrait météo :", df_weather_full[['DATE','CODE POSTAL']].head(5))
-    st.write("⚙️ Extrait tx_j   :", df_tx_j[['DATE','CODE POSTAL']].head(5))
-    #--Fin vérif"""
     
     # 3) Merge fiable sur 2 strings
     df_tx_j = (
@@ -376,38 +367,6 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         )
         .reset_index()
     )
-    """
-    #--Fonction pour prendre en compte les jours sans transaction et rendre votre régression plus robuste
-
-    # 1) récupérer la liste complète des dates et des types
-    toutes_dates = pd.date_range(
-        start=hist['DATE'].min(),
-        end=hist['DATE'].max(),
-        freq='D'
-    )
-    tous_types = hist['TYPE_COMMERCE'].unique()
-    
-    # 2) créer un MultiIndex complet et reindexer
-    idx = pd.MultiIndex.from_product(
-        [toutes_dates, tous_types],
-        names=['DATE','TYPE_COMMERCE']
-    )
-    hist = (
-        hist
-        .set_index(['DATE','TYPE_COMMERCE'])
-        .reindex(idx, fill_value=0)
-        .reset_index()
-    )
-    
-    # 3) récupérer la température moyenne correspondante
-    # (on suppose df_weather_full possède une DATE normalisée en datetime64 NS)
-    temp_moyenne_j = (
-        df_weather_full
-        .groupby('DATE')['TEMP']
-        .mean()
-    )
-    hist['temp_moy'] = hist['DATE'].map(temp_moyenne_j)
-    #-- Fin fonction """
     
     # 3) Entraînement d’un modèle linéaire par type de commerce
     models = {}
