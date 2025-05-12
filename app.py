@@ -15,8 +15,8 @@ st.title("Smile Agent – Rapport BI & Agent Conversationnel")
 
 # --- 1. Upload des 3 fichiers ---
 st.sidebar.header("Chargement des fichiers")
-file_tx = st.sidebar.file_uploader("Transactions (Test)", ["csv","xlsx"], key="tx")
-file_merch = st.sidebar.file_uploader("Caractéristiques marchands", ["csv","xlsx"], key="merch")
+file_tx = st.sidebar.file_uploader("Transactions", ["csv","xlsx"], key="tx")
+file_merch = st.sidebar.file_uploader("Données Pipedrive", ["csv","xlsx"], key="merch")
 file_weather = st.sidebar.file_uploader("Données météo", ["csv","xlsx"], key="weather")
 
 @st.cache_data
@@ -76,7 +76,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     df_geo.rename(columns={'postal_code':'CODE POSTAL'}, inplace=True)
 
     # --- 3. Rapport BI détaillé ---
-    if st.button("📄 Générer rapport BI détaillé"):
+    if st.button("📄 Smile Magic Report"):
         # 1. INDICATEURS DESCRIPTIFS
         st.header("1. Indicateurs descriptifs")
         total_tx = len(df)
@@ -270,7 +270,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     ]
 
     # --- Agent conversationnel ---
-    st.header("💬 Interrogez l'agent BI")
+    st.header("💬 Interrogez Smile Agent")
     # Initialisation de l'historique
     if 'chat_history' not in st.session_state or not isinstance(st.session_state.chat_history, list):
         st.session_state.chat_history = []
