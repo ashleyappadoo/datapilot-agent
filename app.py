@@ -38,7 +38,6 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     st.success("✅ Tous les fichiers chargés")
 
     # --- 2. Préparation et fusion ---
-    # Nettoyage montant et datetime
     df_tx['MONTANT'] = (
         df_tx['MONTANT'].astype(str)
                .str.replace(r"[^0-9,.-]", '', regex=True)
@@ -54,7 +53,6 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     df_tx['WEEK'] = df_tx['DATETIME'].dt.to_period('W').apply(lambda r: r.start_time)
     df_tx['MONTH'] = df_tx['DATETIME'].dt.to_period('M').apply(lambda r: r.start_time)
 
-    # Normalisation météo
     df_weather.columns = (
         df_weather.columns
                   .str.strip()
@@ -66,17 +64,13 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     if 'CODE POSTAL' not in df_weather.columns and 'CODE_POSTAL' in df_weather.columns:
         df_weather.rename(columns={'CODE_POSTAL': 'CODE POSTAL'}, inplace=True)
 
-    # Fusion transactions, marchands, météo
     df = (
         df_tx
-        .merge(
-            df_merch.rename(columns={'Organization_type': 'TYPE_COMMERCE'})[['REF_MARCHAND', 'TYPE_COMMERCE']],
-            on='REF_MARCHAND', how='left'
-        )
+        .merge(df_merch.rename(columns={'Organization_type': 'TYPE_COMMERCE'})[['REF_MARCHAND', 'TYPE_COMMERCE']],
+               on='REF_MARCHAND', how='left')
         .merge(df_weather[['CODE POSTAL', 'TEMP']], on='CODE POSTAL', how='left')
     )
 
-    # Géocodage codes postaux FR
     nomi = pgeocode.Nominatim('fr')
     unique_cp = df['CODE POSTAL'].astype(str).str.zfill(5).drop_duplicates().tolist()
     geo = nomi.query_postal_code(unique_cp)
@@ -244,7 +238,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
         st.info("Sections prédictives (forecasting, alerting) à venir.")
 
-# === ÉTAPE 2 – AGENT CONVERSATIONNEL (hors du précédent if) ===
+    # === ÉTAPE 2 – AGENT CONVERSATIONNEL (hors du précédent if) ===
     st.header("💬 Interrogez l'agent BI")
 
     # Initialisation de l'historique et résumé
@@ -255,8 +249,14 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         resume = []
         resume.append(f"Transactions totales : {len(df)}")
         resume.append(f"CA total : {df['MONTANT'].sum():.2f} €")
-        # Ajoute d'autres indicateurs clés si souhaité
-        st.session_state.summary_bi = "\n".join(resume)
+        resume.append(f"Panier moyen global : {(df['MONTANT'].sum()/len(df)):.2f} €")
+        # Ajouter paniers moyens par type de commerce
+        mean_by_type = df.groupby('TYPE_COMMERCE')['MONTANT'].mean()
+        resume.append("Panier moyen par type de commerce :")
+        for t, m in mean_by_type.items():
+            resume.append(f"  - {t} : {m:.2f} €")
+        st.session_state.summary_bi = "
+".join(resume)
 
     # Champ de saisie
     user_input = st.text_input("Votre question :", key="chat_input")
