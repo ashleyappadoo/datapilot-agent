@@ -342,7 +342,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
     )
     df_tx_j["CODE POSTAL"] = df_tx_j["CODE POSTAL"].astype(str).str.zfill(5)
 
-    #--Début vérif
+    """#--Début vérif
     # Debug : vérifions noms de colonnes et types
     st.write("⚙️ Colonnes météo :", df_weather_full.columns.tolist())
     st.write("⚙️ Colonnes transactions :", df_tx_j.columns.tolist())
@@ -350,9 +350,8 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
     st.write("⚙️ Types tx_j  :", df_tx_j[['DATE','CODE POSTAL']].dtypes.to_dict())
     st.write("⚙️ Extrait météo :", df_weather_full[['DATE','CODE POSTAL']].head(5))
     st.write("⚙️ Extrait tx_j   :", df_tx_j[['DATE','CODE POSTAL']].head(5))
-
-
-    #--Fin vérif
+    #--Fin vérif"""
+    
     # 3) Merge fiable sur 2 strings
     df_tx_j = (
         df_tx_j
@@ -377,6 +376,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         )
         .reset_index()
     )
+    """
     #--Fonction pour prendre en compte les jours sans transaction et rendre votre régression plus robuste
 
     # 1) récupérer la liste complète des dates et des types
@@ -407,7 +407,7 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         .mean()
     )
     hist['temp_moy'] = hist['DATE'].map(temp_moyenne_j)
-    #-- Fin fonction 
+    #-- Fin fonction """
     
     # 3) Entraînement d’un modèle linéaire par type de commerce
     models = {}
