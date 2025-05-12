@@ -263,7 +263,24 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
                 ]
             )
             explanation = resp.choices[0].message.content
-            slide.placeholders[1].text = explanation
+
+            #Nouvel ajout
+            for title, fig in sections.items():
+                slide = prs.slides.add_slide(prs.slide_layouts[1])
+                slide.shapes.title.text = title
+                # … génération de 'explanation' …
+                try:
+                    slide.placeholders[1].text = explanation
+                except (KeyError, IndexError):
+                    # fallback : TextBox
+                    from pptx.util import Pt, Inches
+                    textbox = slide.shapes.add_textbox(Inches(1), Inches(1.5), Inches(8), Inches(1.5))
+                    tf = textbox.text_frame
+                    tf.text = explanation
+                    for paragraph in tf.paragraphs:
+                        for run in paragraph.runs:
+                            run.font.size = Pt(12)
+            
             # Ajout graphique
             if fig is not None:
                 img_tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
