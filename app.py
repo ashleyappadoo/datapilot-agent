@@ -235,6 +235,55 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
         st.info("Sections prédictives (forecasting, alerting) à venir.")
 
+        # --- Génération automatique d'un PowerPoint ---
+        from pptx import Presentation
+        from pptx.util import Inches
+        import tempfile
+
+        # Charge le modèle PPTX
+        template_path = 'exemple.pptx'
+        prs = Presentation(template_path)
+
+        # Mise à jour de la page de garde
+        cover_slide = prs.slides[0]
+        # Suppose titre placeholder 0 et date placeholder 1
+        cover_slide.shapes[0].text = f"Smile Magic Report"
+        cover_slide.shapes[1].text = pd.Timestamp.today().strftime("%d %B %Y")
+
+        # Dictionnaire des sections et des figures générées
+        sections = {
+            "Indicateurs descriptifs": None,  # Remplace None par la figure matplotlib correspondante
+            "Temporalité fine": None,
+            "Analyse spatiale": None,
+            "Corrélations et diagnostics": None,
+            "Segmentation client": None
+        }
+
+        # Pour chaque section, ajoute une diapositive
+        for title, fig in sections.items():
+            slide = prs.slides.add_slide(prs.slide_layouts[1])
+            slide.shapes.title.text = title
+            # Explication via OpenAI
+            prompt = f"Explique en quelques phrases les résultats de la section '{title}' pour un rapport BI."  
+            resp = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role":"system","content":"Tu es un expert en BI."},
+                          {"role":"user","content":prompt}]
+            )
+            explanation = resp.choices[0].message.content
+            # Place l'explication dans le sous-titre
+            slide.placeholders[1].text = explanation
+            # Ajout de la figure au slide
+            if fig is not None:
+                tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                fig.savefig(tmp.name, bbox_inches='tight')
+                slide.shapes.add_picture(tmp.name, Inches(1), Inches(2), width=Inches(8))
+
+        # Sauvegarde et lien de téléchargement
+        output_path = 'rapport_bi.pptx'
+        prs.save(output_path)
+        st.success(f"🎉 Présentation PowerPoint générée : {output_path}")    
+
     # --- Fonctions exposées au LLM ---
     def get_mean_by_type():
         return {'mean_by_type': df.groupby('TYPE_COMMERCE')['MONTANT'].mean().to_dict()}
