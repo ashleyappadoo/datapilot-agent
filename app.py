@@ -377,7 +377,38 @@ if st.button("🔮 Envoyer à Smile Vision") and vision_input:
         )
         .reset_index()
     )
+    #--Fonction pour prendre en compte les jours sans transaction et rendre votre régression plus robuste
 
+    # 1) récupérer la liste complète des dates et des types
+    toutes_dates = pd.date_range(
+        start=hist['DATE'].min(),
+        end=hist['DATE'].max(),
+        freq='D'
+    )
+    tous_types = hist['TYPE_COMMERCE'].unique()
+    
+    # 2) créer un MultiIndex complet et reindexer
+    idx = pd.MultiIndex.from_product(
+        [toutes_dates, tous_types],
+        names=['DATE','TYPE_COMMERCE']
+    )
+    hist = (
+        hist
+        .set_index(['DATE','TYPE_COMMERCE'])
+        .reindex(idx, fill_value=0)
+        .reset_index()
+    )
+    
+    # 3) récupérer la température moyenne correspondante
+    # (on suppose df_weather_full possède une DATE normalisée en datetime64 NS)
+    temp_moyenne_j = (
+        df_weather_full
+        .groupby('DATE')['TEMP']
+        .mean()
+    )
+    hist['temp_moy'] = hist['DATE'].map(temp_moyenne_j)
+    #-- Fin fonction 
+    
     # 3) Entraînement d’un modèle linéaire par type de commerce
     models = {}
     for typ in hist['TYPE_COMMERCE'].unique():
