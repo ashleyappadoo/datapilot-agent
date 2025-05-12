@@ -11,26 +11,21 @@ import json
 import openai
 
 st.set_page_config(layout="wide")
-st.title("Smile & Pay – Rapport BI & Agent Conversationnel")
+st.title("Smile Agent – Rapport BI & Agent Conversationnel")
 
 # --- 1. Upload des 3 fichiers ---
 st.sidebar.header("Chargement des fichiers")
-file_tx = st.sidebar.file_uploader("Transactions (Test)", type=["csv", "xlsx"], key="tx")
-file_merch = st.sidebar.file_uploader("Caractéristiques marchands (Deals Insights)", type=["csv", "xlsx"], key="merch")
-file_weather = st.sidebar.file_uploader("Données météo (Synop Essentials)", type=["csv", "xlsx"], key="weather")
+file_tx = st.sidebar.file_uploader("Transactions (Test)", ["csv","xlsx"], key="tx")
+file_merch = st.sidebar.file_uploader("Caractéristiques marchands", ["csv","xlsx"], key="merch")
+file_weather = st.sidebar.file_uploader("Données météo", ["csv","xlsx"], key="weather")
 
 @st.cache_data
-def read_file(uploaded):
-    if uploaded is None:
-        return None
-    name = uploaded.name.lower()
-    if name.endswith('.csv'):
-        try:
-            return pd.read_csv(uploaded, sep=None, engine='python')
-        except:
-            return pd.read_csv(uploaded, sep=',')
-    else:
-        return pd.read_excel(uploaded, engine='openpyxl')
+def read_file(u):
+    if not u: return None
+    if u.name.lower().endswith('.csv'):
+        try: return pd.read_csv(u, sep=None, engine='python')
+        except: return pd.read_csv(u)
+    return pd.read_excel(u, engine='openpyxl')
 
 df_tx = read_file(file_tx)
 df_merch = read_file(file_merch)
@@ -240,68 +235,72 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
 
         st.info("Sections prédictives (forecasting, alerting) à venir.")
 
-    # === ÉTAPE 2 – AGENT CONVERSATIONNEL (hors du précédent if) ===
+     # --- 2. Définition des fonctions exposées au LLM ---
+    def get_mean_by_type():
+        data = df.groupby('TYPE_COMMERCE')['MONTANT'].mean().to_dict()
+        return {'mean_by_type': data}
+
+    functions = [
+        {
+            'name': 'get_mean_by_type',
+            'description': 'Get average transaction amount per commerce type',
+            'parameters': {
+                'type': 'object',
+                'properties': {},
+                'required': []
+            }
+        }
+    ]
+
+    # --- 3. Agent conversationnel avec function calling ---
     st.header("💬 Interrogez l'agent BI")
 
-    # Initialisation de l'historique et résumé
-    if "chat_history" not in st.session_state:
+    if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
-    if "summary_bi" not in st.session_state:
-        # Construis un résumé succinct à partir des variables calculées
-        resume = []
-        resume.append(f"Transactions totales : {len(df)}")
-        resume.append(f"CA total : {df['MONTANT'].sum():.2f} €")
-        resume.append(f"Panier moyen global : {(df['MONTANT'].sum()/len(df)):.2f} €")
-        # Ajouter paniers moyens par type de commerce
-        mean_by_type = df.groupby('TYPE_COMMERCE')['MONTANT'].mean()
-        resume.append("Panier moyen par type de commerce :")
-        for t, m in mean_by_type.items():
-            resume.append(f"  - {t} : {m:.2f} €")
-        st.session_state.summary_bi = "".join(resume)
 
-    # Champ de saisie
-    user_input = st.text_input("Votre question :", key="chat_input")
-    if st.button("Envoyer", key="send_btn") and user_input:
-        # Compose messages avec historique et résumé
+    user_input = st.text_input("Votre question :", key='chat_input')
+    if st.button("Envoyer", key='send_btn') and user_input:
+        # Assemble messages
         messages = [
-            {"role": "system", "content": "Tu es un assistant BI expert, répond en français."},
-            {"role": "user", "content": f"Résumé des analyses :\n{st.session_state.summary_bi}"}
+            {'role':'system','content':'Tu es un assistant BI expert. Utilise les fonctions si nécessaire.'},
+            *st.session_state.chat_history,
+            {'role':'user','content':user_input}
         ]
-        messages += st.session_state.chat_history[-5:]
-        messages.append({"role": "user", "content": user_input})
-
-        with st.spinner("L'agent réfléchit..."):
-            import openai
-            resp = openai.chat.completions.create(
-                model="gpt-4",
+        # Call with function definitions
+        response = openai.chat.completions.create(
+            model='gpt-4-0613',
+            messages=messages,
+            functions=functions,
+            function_call='auto'
+        )
+        msg = response.choices[0].message
+        # If function call requested
+        if msg.get('function_call'):
+            fn_name = msg['function_call']['name']
+            fn_args = json.loads(msg['function_call']['arguments'] or '{}')
+            fn_response = globals()[fn_name](**fn_args)
+            # Add function response to history
+            st.session_state.chat_history.append({'role':'assistant','content':f'Appel de fonction: {fn_name}'} )
+            st.session_state.chat_history.append({'role':'function','name':fn_name,'content':json.dumps(fn_response)})
+            # Second call to get final answer
+            messages.append({'role':'assistant','content':None,'function_call':msg['function_call']})
+            messages.append({'role':'function','name':fn_name,'content':json.dumps(fn_response)})
+            second = openai.chat.completions.create(
+                model='gpt-4-0613',
                 messages=messages
             )
-            reply = resp.choices[0].message.content
-        # Mémorise
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-        st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-    # Affichage de la réponse
-    if st.session_state.chat_history:
-        last = st.session_state.chat_history[-1]['content']
-        # Exécution de code si détecté
-        if last.strip().startswith('```python'):
-            import re
-            block = re.search(r"```python\n(.*?)```", last, re.DOTALL)
-            if block:
-                code = block.group(1)
-                st.code(code, language='python')
-                try:
-                    exec(code, {}, {"df": df})
-                except Exception as e:
-                    st.error(f"Erreur exécution code : {e}")
+            reply = second.choices[0].message.content
         else:
-            st.markdown(last)
+            reply = msg.content
+        # Store and display
+        st.session_state.chat_history.append({'role':'user','content':user_input})
+        st.session_state.chat_history.append({'role':'assistant','content':reply})
 
-    # Affiche historique complet
-    for msg in st.session_state.chat_history:
-        icon = "👤" if msg['role']=='user' else "🤖"
-        st.markdown(f"**{icon} {msg['content']}**")
-
+    # Render chat history
+    for chat in st.session_state.chat_history:
+        icon = '👤' if chat['role']=='user' else '🤖'
+        content = chat.get('content')
+        st.markdown(f"**{icon}** {content}")
 else:
-    st.warning("Veuillez charger les 3 fichiers Excel pour continuer.")
+    st.warning("Chargez d'abord les 3 fichiers Excel.")
+
