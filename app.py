@@ -54,7 +54,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     # (optionnel) on peut supprimer les transactions sans montant valide :
     df_tx = df_tx.dropna(subset=['MONTANT'])
     
-        )
+    )
     df_tx['DATETIME'] = pd.to_datetime(
         df_tx['DATE'].astype(str) + ' ' + df_tx['HEURE'].astype(str),
         dayfirst=True, errors='coerce'
