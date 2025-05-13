@@ -60,9 +60,12 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     )
     df_tx['HOUR'] = df_tx['DATETIME'].dt.hour
     df_tx['DAY'] = df_tx['DATETIME'].dt.date
-    df_tx['WEEK'] = df_tx['DATETIME'].dt.to_period('W').apply(lambda r: r.start_time)
-    df_tx['MONTH'] = df_tx['DATETIME'].dt.to_period('M').apply(lambda r: r.start_time)
+    #df_tx['WEEK'] = df_tx['DATETIME'].dt.to_period('W').apply(lambda r: r.start_time)
+    #df_tx['MONTH'] = df_tx['DATETIME'].dt.to_period('M').apply(lambda r: r.start_time)
+    df_tx['WEEK'] = df_tx['DATETIME'].dt.to_period('W').dt.start_time
+    df_tx['MONTH'] = df_tx['DATETIME'].dt.to_period('M').dt.start_time
 
+    
     df_weather.columns = df_weather.columns.str.strip().str.replace(r"\s+", ' ', regex=True).str.upper()
     if 'TEMPÉRATURE' in df_weather.columns:
         df_weather.rename(columns={'TEMPÉRATURE':'TEMP'}, inplace=True)
