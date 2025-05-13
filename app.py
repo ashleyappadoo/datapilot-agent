@@ -14,7 +14,7 @@ from pptx.util import Inches, Pt
 import tempfile
 
 st.set_page_config(layout="wide")
-st.title("Smile Agent (POC) – Rapport BI & Agent Conversationnel")
+st.title("Smart Flow (POC) – L'Agent Smile pour l'analyse des flux")
 
 # --- 1. Upload des 3 fichiers + modèle PPTX ---
 st.sidebar.header("Chargement des fichiers")
@@ -279,7 +279,7 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
         {'name':'get_tpe_count_by_type','description':'TPE count','parameters':{'type':'object','properties':{},'required':[]}}
     ]
 
-    st.header("💬 Interrogez l'agent BI")
+    st.header("💬 Discutez avec Smart Flow")
     if 'chat_history' not in st.session_state or not isinstance(st.session_state.chat_history,list):st.session_state.chat_history=[]
     user_input=st.text_input("Votre question :",key='chat_input')
     if user_input and st.button("Envoyer",key='send_btn'):
