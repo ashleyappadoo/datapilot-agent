@@ -43,12 +43,18 @@ if df_tx is not None and df_merch is not None and df_weather is not None:
     st.success("✅ Tous les fichiers chargés")
 
     # --- 2. Préparation et fusion ---
-    df_tx['MONTANT'] = (
-        df_tx['MONTANT'].astype(str)
-               .str.replace(r"[^0-9,.-]", '', regex=True)
-               .str.replace(',', '.')
-               .astype(float)
+    # Nettoyage et conversion du montant
+    montants_clean = (
+        df_tx['MONTANT']
+          .astype(str)
+          .str.replace(r"[^0-9\.,-]", '', regex=True)
+          .str.replace(',', '.')
     )
+    df_tx['MONTANT'] = pd.to_numeric(montants_clean, errors='coerce')
+    # (optionnel) on peut supprimer les transactions sans montant valide :
+    df_tx = df_tx.dropna(subset=['MONTANT'])
+    
+        )
     df_tx['DATETIME'] = pd.to_datetime(
         df_tx['DATE'].astype(str) + ' ' + df_tx['HEURE'].astype(str),
         dayfirst=True, errors='coerce'
